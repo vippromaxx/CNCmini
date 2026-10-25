@@ -1,0 +1,91 @@
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MiniCNC · Cấu hình thiết bị</title>
+<style>
+:root{--ink:#1d2421;--paper:#f4f5ef;--line:#a9b6a8;--accent:#b9e773}*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 Arial,sans-serif}
+main{max-width:640px;margin:44px auto;padding:0 20px}header{display:flex;justify-content:space-between;gap:16px;border-bottom:2px solid var(--ink);padding-bottom:12px}
+header strong{font-size:22px}header span,.hint{color:#4e5c52;font-size:14px}h1{font-size:31px;line-height:1.2;margin:26px 0 10px}
+.status{padding:12px 16px;background:#e6eee0;border-left:4px solid #639331;margin:22px 0}.status p{margin:4px 0}
+fieldset{border:1px solid var(--line);padding:14px 18px;margin:18px 0;background:#fff}legend{font-weight:700;padding:0 5px}
+label.field{display:block;font-weight:600;margin:13px 0 4px}input:not([type=checkbox]){display:block;width:100%;padding:10px;border:1px solid #758678;border-radius:3px;font:inherit}
+input:focus-visible,button:focus-visible{outline:3px solid #547d26;outline-offset:2px}.check{display:flex;align-items:center;gap:8px;font-size:14px;margin:12px 0}
+.check input{width:18px;height:18px;accent-color:#547d26}button{width:100%;background:var(--accent);border:1px solid var(--ink);border-radius:3px;padding:13px;font:inherit;font-weight:700;cursor:pointer}button:disabled{opacity:.55;cursor:not-allowed}
+#message{min-height:27px;overflow-wrap:anywhere}footer{border-top:1px solid var(--line);padding:17px 0 30px;font-size:14px;color:#4e5c52}
+@media(max-width:480px){main{margin:20px auto;padding:0 15px}h1{font-size:27px}}
+</style></head><body><main>
+<header><strong>MiniCNC</strong><span>Cấu hình ESP32</span></header>
+<h1>Thiết lập kết nối</h1>
+<p>Nhập WiFi và broker MQTT cho máy vẽ. Thiết bị lưu cấu hình, sau đó khởi động lại để sử dụng.</p>
+<section class="status" aria-live="polite"><p id="connection">Đang đọc trạng thái…</p><p id="device"></p></section>
+<form id="wifiForm">
+<fieldset><legend>Mạng WiFi</legend>
+<label class="field" for="ssid">Tên WiFi (SSID)</label><input id="ssid" name="ssid" required autocomplete="off" spellcheck="false">
+<p class="hint">Tối đa 32 byte, giữ nguyên chữ hoa và khoảng trắng.</p>
+<label class="field" for="password">Mật khẩu WiFi</label><input id="password" name="password" type="password" autocomplete="new-password">
+<p class="hint">Để trống chỉ khi WiFi không có mật khẩu.</p></fieldset>
+<fieldset><legend>Broker MQTT trên laptop</legend>
+<label class="field" for="mqttHost">IP hoặc tên máy broker</label><input id="mqttHost" name="mqttHost" required autocomplete="off" spellcheck="false" placeholder="192.168.1.6">
+<label class="field" for="mqttPort">Cổng MQTT</label><input id="mqttPort" name="mqttPort" type="number" min="1" max="65535" required value="1883">
+<label class="field" for="mqttUser">Tên đăng nhập MQTT</label><input id="mqttUser" name="mqttUser" required autocomplete="off">
+<label class="field" for="mqttPassword">Mật khẩu MQTT</label><input id="mqttPassword" name="mqttPassword" type="password" autocomplete="new-password">
+<p class="hint">Dùng tài khoản ESP32 trong broker/users.json. Mật khẩu không hiển thị lại sau khi tải trang.</p></fieldset>
+<label class="check"><input id="showPassword" type="checkbox">Hiện hai mật khẩu</label>
+<button id="save" type="submit" disabled>Lưu cấu hình và khởi động lại</button><p id="message" role="status" aria-live="polite"></p>
+</form><footer>Khi chưa có cấu hình hoặc WiFi đã lưu không kết nối được, ESP32 mở WiFi <strong>KimPang</strong>, mật khẩu <strong>88888888</strong>. Kết nối mạng này rồi mở <strong>http://192.168.4.1</strong>. Sau khi máy khởi động lại, laptop cần trở về WiFi chung để dùng bảng điều khiển CNC. Có thể gõ <code>config</code> trong Serial Monitor lúc máy rảnh để vào lại chế độ cấu hình.</footer>
+</main><script>
+const el = id => document.getElementById(id);
+let initialized = false, online = false, machineBusy = true, saving = false, restarting = false;
+function updateButton(){ el('save').disabled = !online || machineBusy || saving || restarting; }
+async function refreshStatus(){
+  if(restarting) return;
+  try{
+    const response = await fetch('/api/status',{cache:'no-store'});
+    if(!response.ok) throw Error('status');
+    const data = await response.json();
+    online = true; machineBusy = !!data.busy;
+    if(!initialized){
+      el('ssid').value=data.ssid || '';
+      el('mqttHost').value=data.mqttHost || '';
+      el('mqttPort').value=String(data.mqttPort || 1883);
+      el('mqttUser').value=data.mqttUser || '';
+      initialized=true;
+    }
+    el('connection').textContent = machineBusy ? 'Máy đang chạy. Đợi máy dừng trước khi lưu.' : 'Config Mode: sẵn sàng lưu cấu hình.';
+    el('device').textContent = 'Thiết bị: ' + (data.deviceId || 'cnc01');
+  }catch(_){online=false;el('connection').textContent='Mất kết nối với ESP32. Hãy kết nối lại WiFi cấu hình.';}
+  updateButton();
+}
+el('showPassword').addEventListener('change',()=>{
+  const type=el('showPassword').checked?'text':'password';
+  el('password').type=type;el('mqttPassword').type=type;
+});
+el('wifiForm').addEventListener('submit',async event=>{
+  event.preventDefault();
+  if(!online || machineBusy || saving || restarting) return;
+  const ssid=el('ssid').value,password=el('password').value,mqttHost=el('mqttHost').value,
+    mqttPort=Number(el('mqttPort').value),mqttUser=el('mqttUser').value,mqttPassword=el('mqttPassword').value;
+  const size=value=>new TextEncoder().encode(value).length;
+  if(!ssid || size(ssid)>32 || ssid.includes('\0') || password.includes('\0')){
+    el('message').textContent='Tên WiFi cần 1–32 byte, không chứa ký tự NUL.';return;
+  }
+  if(password && !(size(password)>=8 && size(password)<=63) && !/^[0-9a-fA-F]{64}$/.test(password)){
+    el('message').textContent='Mật khẩu WiFi cần 8–63 byte hoặc khóa hex 64 ký tự.';return;
+  }
+  if(!mqttHost || size(mqttHost)>63 || !/^[a-zA-Z0-9._-]+$/.test(mqttHost) || !Number.isInteger(mqttPort) || mqttPort<1 || mqttPort>65535 ||
+     size(mqttUser)>64 || size(mqttPassword)>128 || mqttUser.includes('\0') || mqttPassword.includes('\0')){
+    el('message').textContent='Kiểm tra IP/tên broker, cổng 1–65535 và tài khoản MQTT.';return;
+  }
+  saving=true;updateButton();el('message').textContent='Đang ghi cấu hình vào EEPROM…';
+  try{
+    const response=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ssid,password,mqttHost,mqttPort,mqttUser,mqttPassword})});
+    const data=await response.json();
+    if(!response.ok) throw Error(data.error || 'Không lưu được cấu hình.');
+    el('message').textContent=data.message || 'Đã lưu. Thiết bị đang khởi động lại.';
+    el('password').value='';el('mqttPassword').value='';
+    restarting=!!data.pending;
+  }catch(error){el('message').textContent=error.message;}
+  saving=false;updateButton();
+});
+async function poll(){await refreshStatus();setTimeout(poll,2000)}setTimeout(poll,0);
+</script></body></html>

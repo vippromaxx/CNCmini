@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Test MQTT WebSocket</title>
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@5/dist/mqtt.min.js"></script>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 30px auto; padding: 0 16px; }
+    #status { padding: 10px; border-radius: 6px; font-weight: bold; background: #eee; }
+    #status.ok { background: #d4f8d4; color: #1a6b1a; }
+    #status.err { background: #fbd5d5; color: #8b1a1a; }
+    button { font-size: 16px; padding: 8px 20px; margin-right: 8px; cursor: pointer; }
+    #log { background: #111; color: #0f0; padding: 10px; height: 300px; overflow-y: auto;
+           font-family: monospace; font-size: 13px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h2>Test MQTT qua WebSocket</h2>
+  <div id="status">⏳ Đang kết nối WebSocket MQTT ...</div>
+
+  <h3>Kiểm thử roundtrip qua WebSocket</h3>
+  <button onclick="send('ON')">💡 ON</button>
+  <button onclick="send('OFF')">⚫ OFF</button>
+
+  <h3>Log</h3>
+  <div id="log"></div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const logEl = document.getElementById('log');
+
+    function log(msg) {
+      const time = new Date().toLocaleTimeString();
+      logEl.innerHTML += `[${time}] ${msg}<br>`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    const mqttUrl = `${scheme}://${location.host || '127.0.0.1:3000'}/mqtt`;
+    const client = mqtt.connect(mqttUrl, {
+      clientId: `web-test-${Math.random().toString(16).slice(2)}`,
+      username: 'user1',
+      password: '1'
+    });
+
+    client.on('connect', () => {
+      statusEl.textContent = `✅ Đã kết nối broker (${mqttUrl})`;
+      statusEl.className = 'ok';
+      log('Connected');
+      client.subscribe('cnc/cnc01/status', () => log('Subscribed cnc/cnc01/status'));
+      client.subscribe('cnc/cnc01/lock', () => log('Subscribed cnc/cnc01/lock'));
+      client.subscribe('cnc/cnc01/test', () => log('Subscribed cnc/cnc01/test'));
+    });
+
+    client.on('message', (topic, payload) => {
+      log(`📥 ${topic}: ${payload}`);
+    });
+
+    client.on('error', (err) => {
+      statusEl.textContent = '❌ Lỗi: ' + err.message + ' (sai user/pass?)';
+      statusEl.className = 'err';
+    });
+
+    client.on('offline', () => {
+      statusEl.textContent = '❌ Mất kết nối — broker có đang chạy không?';
+      statusEl.className = 'err';
+    });
+
+    function send(cmd) {
+      client.publish('cnc/cnc01/test', cmd, { qos: 1 });
+      log(`📤 cnc/cnc01/test: ${cmd}`);
+    }
+  </script>
+</body>
+</html>

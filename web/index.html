@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#5cff16">
+  <title>MiniCNC · Điều khiển máy</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app-shell" id="top">
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="MiniCNC - trang chủ">
+        <span class="brand-mark">✦</span>
+        <span><strong>MiniCNC</strong><small>Điều khiển máy</small></span>
+      </a>
+      <div class="topbar-right">
+        <span class="machine-tag">ESP32-C5 · cnc01</span>
+        <b id="connection" class="connection">Chưa kết nối</b>
+      </div>
+    </header>
+
+    <section class="welcome" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">PHÒNG ĐIỀU KHIỂN</p>
+        <h1 id="page-title">Biến ý tưởng<br>thành <mark>chuyển động.</mark></h1>
+        <p class="intro">Kết nối với máy CNC, điều khiển từng trục và gửi bản vẽ trực tiếp từ trình duyệt.</p>
+      </div>
+      <div class="machine-card" aria-label="Tóm tắt máy CNC">
+        <span class="sticker sticker-lime">☺</span>
+        <span class="sticker sticker-orange">✎</span>
+        <p class="card-label">TRẠNG THÁI MÁY</p>
+        <strong id="liveState">Đang chờ kết nối</strong>
+        <div class="machine-line"><span>Vị trí</span><b id="livePosition">X 0 · Y 0</b></div>
+        <div class="machine-line"><span>Công việc</span><b id="liveJob">Chưa có</b></div>
+      </div>
+    </section>
+
+    <section class="login-panel panel" id="loginCard" aria-labelledby="login-title">
+      <div>
+        <p class="eyebrow">KẾT NỐI MQTT</p>
+        <h2 id="login-title">Mở kết nối với máy</h2>
+        <p class="muted">Đăng nhập broker để gửi lệnh đến ESP32. Mở trang bằng <code>http://IP-MÁY-BROKER:3000</code>; WebSocket dùng cùng địa chỉ tại <code>/mqtt</code>.</p>
+      </div>
+      <form id="connectForm" class="connect-form">
+        <label>Tài khoản<input id="username" autocomplete="username" placeholder="user1" required></label>
+        <label>Mật khẩu<input id="password" type="password" autocomplete="current-password" placeholder="Mật khẩu" required></label>
+        <button type="submit" class="button button-purple">Kết nối ↗</button>
+      </form>
+    </section>
+
+    <section class="section" id="controls" aria-labelledby="control-title">
+      <div class="section-heading"><div><p class="eyebrow">01 · ĐIỀU KHIỂN</p><h2 id="control-title">Điều khiển trực tiếp</h2></div><span class="section-number">01</span></div>
+      <div class="control-grid">
+        <article class="panel status-panel">
+          <div class="panel-title"><h3>Trạng thái máy</h3><span class="pill">cnc01</span></div>
+          <div class="status-metrics">
+            <div><span>Trạng thái</span><strong id="statusBadge">Chưa kết nối</strong></div>
+            <div><span>Tọa độ</span><strong id="positionBadge">X 0 · Y 0</strong></div>
+          </div>
+          <pre id="status">Chưa nhận được dữ liệu từ ESP32.</pre>
+          <button id="disconnect" type="button" class="button button-light full-width">Ngắt kết nối</button>
+        </article>
+
+        <article class="panel jog-panel">
+          <div class="panel-title"><h3>Di chuyển trục</h3><span class="pill pill-lime">THỦ CÔNG</span></div>
+          <div class="jog-content">
+            <div class="jog-pad" aria-label="Bàn phím di chuyển">
+              <span></span><button type="button" data-topic="control/jog/y/up" aria-label="Di chuyển Y lên">Y ↑</button><span></span>
+              <button type="button" data-topic="control/jog/x/left" aria-label="Di chuyển X sang trái">← X</button>
+              <button type="button" data-topic="control/home" data-payload="" aria-label="Về gốc">GỐC</button>
+              <button type="button" data-topic="control/jog/x/right" aria-label="Di chuyển X sang phải">X →</button>
+              <span></span><button type="button" data-topic="control/jog/y/down" aria-label="Di chuyển Y xuống">Y ↓</button><span></span>
+            </div>
+            <div class="quick-controls">
+              <button type="button" data-topic="control/pen/up" data-payload="">Nhấc bút</button>
+              <button type="button" data-topic="control/pen/down" data-payload="">Hạ bút</button>
+              <button type="button" data-topic="control/led" data-payload="1">Bật đèn</button>
+              <button type="button" data-topic="control/led" data-payload="0">Tắt đèn</button>
+              <button type="button" class="button-danger wide" data-topic="control/stop" data-payload="">DỪNG MÁY</button>
+            </div>
+          </div>
+          <div class="pen-angle-row">
+            <label>Góc nhấc bút<input id="penUp" type="number" min="0" max="180" value="110"></label>
+            <label>Góc hạ bút<input id="penDown" type="number" min="0" max="180" value="45"></label>
+          </div>
+          <div class="input-row">
+            <label>Bước di chuyển<input id="steps" type="number" min="1" value="10"></label>
+            <label>Tốc độ<input id="speed" type="number" min="1" value="500"></label>
+            <button id="sendSpeed" type="button" class="button button-dark">Lưu</button>
+          </div>
+        </article>
+      </div>
+      <article class="panel calibration-panel" aria-labelledby="calibration-title">
+        <div class="panel-title"><h3 id="calibration-title">Căn chỉnh gốc và hành trình</h3><span class="pill pill-lime">THỰC TẾ</span></div>
+        <p class="muted calibration-help">Đưa máy đến vị trí cần đặt bằng các nút điều khiển, sau đó bấm đúng nút tương ứng. Đặt giới hạn sẽ tự tính tỉ lệ X/Y để cùng một đơn vị di chuyển có cùng phần trăm hành trình.</p>
+        <div class="calibration-actions">
+          <button type="button" data-topic="control/cal/origin" data-payload="">Đặt gốc tại vị trí hiện tại</button>
+          <button type="button" data-topic="control/cal/set" data-payload="">Đặt giới hạn tại vị trí hiện tại</button>
+          <button type="button" class="button-purple" data-topic="control/cal/sync" data-payload="">Đồng bộ tỉ lệ X/Y</button>
+        </div>
+        <div class="calibration-readout"><span>Giới hạn X <b id="calLimitX">--</b></span><span>Giới hạn Y <b id="calLimitY">--</b></span><span>Tỉ lệ X <b id="calScaleX">--</b></span><span>Tỉ lệ Y <b id="calScaleY">--</b></span></div>
+      </article>
+      <article class="panel telemetry-panel" aria-label="Theo dõi vị trí và môi trường">
+        <div class="panel-title"><h3>Theo dõi vị trí & môi trường</h3><span class="pill pill-lime">DỮ LIỆU TRỰC TIẾP</span></div>
+        <div class="telemetry-grid">
+          <div class="position-chart-card">
+            <div class="chart-heading"><b>Vị trí động cơ theo thời gian</b><span>mm</span></div>
+            <canvas id="positionChart" height="220" aria-label="Biểu đồ line vị trí trục X và Y"></canvas>
+            <div class="chart-legend"><span><i class="legend-x"></i>Trục X <b id="axisXValue">0 mm</b></span><span><i class="legend-y"></i>Trục Y <b id="axisYValue">0 mm</b></span></div>
+          </div>
+          <div class="environment-card">
+            <div class="environment-item"><span class="temperature-icon">℃</span><div><span>NHIỆT ĐỘ DHT11</span><strong id="temperatureValue">-- °C</strong><small id="temperatureNote">Chờ dữ liệu DHT11</small></div></div>
+            <div class="environment-item"><span class="humidity-icon">♒</span><div><span>ĐỘ ẨM DHT11</span><strong id="humidityValue">-- %</strong><small id="humidityNote">Chờ dữ liệu DHT11</small></div></div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="section" id="sketch" aria-labelledby="draw-title">
+      <div class="section-heading"><div><p class="eyebrow">02 · TÁC VỤ</p><h2 id="draw-title">Vẽ tự động</h2></div><span class="section-number">02</span></div>
+      <article class="panel drawing-panel">
+        <div class="drawing-copy"><h3>Gửi một hình đơn giản</h3><p class="muted">ESP32 sẽ nhận đường chạy, di chuyển đến từng điểm và tự nâng/hạ bút.</p></div>
+        <div class="drawing-fields">
+          <label>Kích thước <output id="scaleOut">90%</output><input id="scale" type="range" min="10" max="100" value="90"></label>
+        </div>
+        <div class="drawing-actions">
+          <button id="square" type="button" class="button">Vẽ hình vuông □</button>
+          <button id="circle" type="button" class="button button-purple">Vẽ hình tròn ○</button>
+          <button type="button" class="button-danger" data-topic="control/stop" data-payload="">Dừng bản vẽ</button>
+        </div>
+        <p id="jobMessage" class="job-message">Bản vẽ sẽ được nạp vào bộ nhớ ESP32 trước khi chạy.</p>
+      </article>
+    </section>
+
+    <section class="section compact-section" id="gallery" aria-labelledby="upload-title">
+      <div class="section-heading"><div><p class="eyebrow">03 · DỮ LIỆU</p><h2 id="upload-title">Lưu ảnh tham khảo</h2></div><span class="section-number">03</span></div>
+      <article class="panel upload-panel">
+        <div><p class="muted">Chọn ảnh để xem trước hình cần vẽ. Ảnh vẫn được lưu vào broker cho bước chuyển thành đường chạy.</p><input id="image" type="file" accept="image/*"><div id="imagePreviewWrap" class="image-preview-wrap" hidden><img id="imagePreview" alt="Ảnh xem trước bản vẽ"><span id="imagePreviewName"></span></div><button id="upload" type="button" class="button">Lưu ảnh ↗</button></div>
+        <pre id="log">Nhật ký hệ thống đã sẵn sàng.</pre>
+      </article>
+    </section>
+
+    <footer class="footer"><span>MINICNC · ESP32-C5</span><span>Điều khiển rõ ràng · thao tác an toàn</span></footer>
+  </main>
+  <script src="mqtt.min.js"></script>
+  <script>if (!window.mqtt) document.write('<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"><\\/script>');</script>
+  <script src="script.js?v=dht11"></script>
+</body>
+</html>

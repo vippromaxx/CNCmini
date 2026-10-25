@@ -1,0 +1,17 @@
+broker/node_modules/
+broker/users.json
+broker/uploads/
+broker/*.log
+broker/.tmp-*
+recovery/nvs_dump_blobs.txt
+
+# Raw ESP32 recovery images and NVS extracts may contain Wi-Fi/MQTT secrets.
+recovery/*flash*.bin
+recovery/nvs.bin
+recovery/nvs_dump*.txt
+
+# Local/editor and build output
+.vscode/
+.pio/
+*.tmp
+*.bak

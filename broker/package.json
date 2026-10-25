@@ -1,0 +1,15 @@
+{
+  "name": "minicnc-broker",
+  "version": "1.0.0-recovered",
+  "private": true,
+  "description": "Recovered Node.js/Aedes broker, WebSocket dashboard and MariaDB bridge for MiniCNC",
+  "main": "broker.js",
+  "scripts": {
+    "start": "node broker.js"
+  },
+  "dependencies": {
+    "aedes": "^1.2.0",
+    "mysql2": "^3.14.3",
+    "ws": "^8.18.3"
+  }
+}

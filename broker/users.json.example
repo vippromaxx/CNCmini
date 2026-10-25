@@ -1,0 +1,9 @@
+{
+  "users": {
+    "cnc": "change-me",
+    "user1": "1",
+    "admin": "change-admin-password"
+  },
+  "admins": ["admin"],
+  "operators": ["user1"]
+}
