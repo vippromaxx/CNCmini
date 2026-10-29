@@ -22,3 +22,4 @@ Mở dashboard trên máy chạy broker bằng `http://localhost:3000` hoặc tr
 Đổi mật khẩu trong `broker/users.json` trước khi dùng trong mạng thật.
 
 Broker mặc định lắng nghe trên mọi giao diện mạng (`0.0.0.0`) để máy khác truy cập được. Có thể đổi cổng bằng biến môi trường `WEB_PORT`, `MQTT_PORT` hoặc địa chỉ bind bằng `BIND_HOST`.
+kjllkfdfsaflkj
