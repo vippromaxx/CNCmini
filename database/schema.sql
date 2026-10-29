@@ -31,3 +31,13 @@ CREATE TABLE IF NOT EXISTS status_log (
   payload TEXT NOT NULL,
   INDEX idx_status_created_at (created_at)
 );
+
+CREATE TABLE IF NOT EXISTS dht_log (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  device VARCHAR(64) NOT NULL,
+  temperature FLOAT NULL,
+  humidity FLOAT NULL,
+  chip_temperature FLOAT NULL,
+  INDEX idx_dht_created_at (created_at)
+);

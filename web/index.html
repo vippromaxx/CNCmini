@@ -3,8 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#5cff16">
+  <meta name="theme-color" content="#a8ff53">
+  <meta name="description" content="MiniCNC – Điều khiển máy CNC ESP32 từ trình duyệt. Kết nối MQTT, di chuyển trục, vẽ tự động.">
   <title>MiniCNC · Điều khiển máy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -36,82 +40,228 @@
       </div>
     </section>
 
-    <section class="login-panel panel" id="loginCard" aria-labelledby="login-title">
-      <div>
-        <p class="eyebrow">KẾT NỐI MQTT</p>
-        <h2 id="login-title">Mở kết nối với máy</h2>
-        <p class="muted">Đăng nhập broker để gửi lệnh đến ESP32. Mở trang bằng <code>http://IP-MÁY-BROKER:3000</code>; WebSocket dùng cùng địa chỉ tại <code>/mqtt</code>.</p>
+    <!-- Marquee strip -->
+    <div class="marquee-strip" aria-hidden="true">
+      <div class="marquee-track">
+        <span class="marquee-item">MiniCNC <span class="dot"></span></span>
+        <span class="marquee-item">ESP32 <span class="dot"></span></span>
+        <span class="marquee-item">IoT Control <span class="dot"></span></span>
+        <span class="marquee-item">MQTT <span class="dot"></span></span>
+        <span class="marquee-item">Realtime <span class="dot"></span></span>
+        <span class="marquee-item">Draw <span class="dot"></span></span>
+        <span class="marquee-item">Calibrate <span class="dot"></span></span>
+        <span class="marquee-item">WebSocket <span class="dot"></span></span>
+        <span class="marquee-item">MiniCNC <span class="dot"></span></span>
+        <span class="marquee-item">ESP32 <span class="dot"></span></span>
+        <span class="marquee-item">IoT Control <span class="dot"></span></span>
+        <span class="marquee-item">MQTT <span class="dot"></span></span>
+        <span class="marquee-item">Realtime <span class="dot"></span></span>
+        <span class="marquee-item">Draw <span class="dot"></span></span>
+        <span class="marquee-item">Calibrate <span class="dot"></span></span>
+        <span class="marquee-item">WebSocket <span class="dot"></span></span>
       </div>
-      <form id="connectForm" class="connect-form">
-        <label>Tài khoản<input id="username" autocomplete="username" placeholder="user1" required></label>
-        <label>Mật khẩu<input id="password" type="password" autocomplete="current-password" placeholder="Mật khẩu" required></label>
-        <button type="submit" class="button button-purple">Kết nối ↗</button>
-      </form>
-    </section>
+    </div>
 
     <section class="section" id="controls" aria-labelledby="control-title">
       <div class="section-heading"><div><p class="eyebrow">01 · ĐIỀU KHIỂN</p><h2 id="control-title">Điều khiển trực tiếp</h2></div><span class="section-number">01</span></div>
       <div class="control-grid">
-        <article class="panel status-panel">
-          <div class="panel-title"><h3>Trạng thái máy</h3><span class="pill">cnc01</span></div>
-          <div class="status-metrics">
-            <div><span>Trạng thái</span><strong id="statusBadge">Chưa kết nối</strong></div>
-            <div><span>Tọa độ</span><strong id="positionBadge">X 0 · Y 0</strong></div>
+        <article class="panel auth-panel">
+          <div class="panel-title">
+            <h3>Đăng nhập tài khoản</h3>
+            <span id="connectionBadge" class="pill">CHƯA KẾT NỐI</span>
           </div>
-          <pre id="status">Chưa nhận được dữ liệu từ ESP32.</pre>
-          <button id="disconnect" type="button" class="button button-light full-width">Ngắt kết nối</button>
+          <p class="muted">Nhập tài khoản broker để kết nối và điều khiển máy CNC qua mạng LAN.</p>
+
+          <form id="connectForm" class="auth-form">
+            <label>Tài khoản
+              <input id="username" autocomplete="username" placeholder="Ví dụ: user1" required>
+            </label>
+            <label>Mật khẩu
+              <input id="password" type="password" autocomplete="current-password" placeholder="Mật khẩu" required>
+            </label>
+            <div class="auth-actions">
+              <button id="connectBtn" type="submit" class="button button-purple wide">Kết nối broker ↗</button>
+              <button id="disconnect" type="button" class="button button-light wide" style="display: none;">Ngắt kết nối</button>
+            </div>
+          </form>
+
+          <div class="auth-meta">
+            <div class="auth-meta-item">
+              <span>THIẾT BỊ</span>
+              <strong>cnc01 (ESP32)</strong>
+            </div>
+            <div class="auth-meta-item">
+              <span>TRẠNG THÁI</span>
+              <strong id="connectionState">Chưa kết nối</strong>
+            </div>
+          </div>
+
+          <div class="wifi-reset-box">
+            <button id="resetWifiBtn" type="button" class="button button-light wide reset-wifi-btn" title="Chuyển ESP32 về chế độ phát WiFi KimPang để cài đặt lại">
+              <span>📶</span> Cài đặt lại WiFi (AP Mode)
+            </button>
+            <small class="wifi-reset-hint">Chuyển ESP32 về trạm phát <strong>KimPang</strong> (192.168.4.1) để đổi mạng WiFi</small>
+          </div>
         </article>
 
         <article class="panel jog-panel">
-          <div class="panel-title"><h3>Di chuyển trục</h3><span class="pill pill-lime">THỦ CÔNG</span></div>
+          <div class="panel-title">
+            <h3>Di chuyển trục</h3>
+            <span class="pill pill-lime">THỦ CÔNG</span>
+          </div>
+
+          <!-- Realtime Coordinate & Status Strip -->
+          <div class="jog-meta">
+            <div class="jog-meta-item">
+              <span>TỌA ĐỘ HIỆN TẠI</span>
+              <strong id="jogPosDisplay">X: 0 mm · Y: 0 mm</strong>
+            </div>
+            <div class="jog-meta-item">
+              <span>TRẠNG THÁI HIỆU CHUẨN</span>
+              <strong id="jogCalDisplay">Chưa đặt gốc</strong>
+            </div>
+          </div>
+
           <div class="jog-content">
-            <div class="jog-pad" aria-label="Bàn phím di chuyển">
-              <span></span><button type="button" data-topic="control/jog/y/up" aria-label="Di chuyển Y lên">Y ↑</button><span></span>
-              <button type="button" data-topic="control/jog/x/left" aria-label="Di chuyển X sang trái">← X</button>
-              <button type="button" data-topic="control/home" data-payload="" aria-label="Về gốc">GỐC</button>
-              <button type="button" data-topic="control/jog/x/right" aria-label="Di chuyển X sang phải">X →</button>
-              <span></span><button type="button" data-topic="control/jog/y/down" aria-label="Di chuyển Y xuống">Y ↓</button><span></span>
+            <!-- Left: D-pad & Step selector -->
+            <div class="jog-dpad-col">
+              <div class="jog-pad" aria-label="Bàn phím di chuyển">
+                <span></span>
+                <button type="button" data-topic="control/jog/y/up" aria-label="Y lên">Y ↑</button>
+                <span></span>
+                <button type="button" data-topic="control/jog/x/left" aria-label="X sang trái">← X</button>
+                <button type="button" class="home-btn" data-topic="control/home" data-payload="" aria-label="Về gốc">GỐC</button>
+                <button type="button" data-topic="control/jog/x/right" aria-label="X sang phải">X →</button>
+                <span></span>
+                <button type="button" data-topic="control/jog/y/down" aria-label="Y xuống">Y ↓</button>
+                <span></span>
+              </div>
+
+              <div class="step-select-row">
+                <label>Bước di chuyển</label>
+                <div class="step-pills">
+                  <button type="button" class="step-pill active" data-step="10">10</button>
+                  <button type="button" class="step-pill" data-step="50">50</button>
+                  <button type="button" class="step-pill" data-step="100">100</button>
+                  <input id="steps" type="hidden" value="10">
+                </div>
+              </div>
+
+              <div class="speed-select-row" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <label for="speedSlider" style="font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--purple);">Tốc độ động cơ</label>
+                  <span id="speedValue" style="font-weight: 800; font-size: 13px; color: var(--ink);">400 bước/s</span>
+                </div>
+                <input id="speedSlider" type="range" min="100" max="1500" step="50" value="400" style="width: 100%; accent-color: var(--purple); cursor: pointer;">
+                <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 3px;">
+                  <span>100 (Êm ru)</span>
+                  <span>400 (Vừa)</span>
+                  <span>1500 (Nhanh)</span>
+                </div>
+              </div>
             </div>
-            <div class="quick-controls">
-              <button type="button" data-topic="control/pen/up" data-payload="">Nhấc bút</button>
-              <button type="button" data-topic="control/pen/down" data-payload="">Hạ bút</button>
-              <button type="button" data-topic="control/led" data-payload="1">Bật đèn</button>
-              <button type="button" data-topic="control/led" data-payload="0">Tắt đèn</button>
-              <button type="button" class="button-danger wide" data-topic="control/stop" data-payload="">DỪNG MÁY</button>
+
+            <!-- Right: Quick controls & Pen angles -->
+            <div class="jog-actions-col">
+              <div class="quick-controls">
+                <button id="togglePen" type="button" class="ctrl-btn">✏ Nhấc / Hạ bút</button>
+                <button id="toggleLed" type="button" class="ctrl-btn">💡 Đèn Tắt / Mở</button>
+                <button type="button" class="ctrl-btn" data-topic="control/cal/origin" data-payload="">📍 Đặt gốc</button>
+                <button type="button" class="ctrl-btn" data-topic="control/cal/set" data-payload="">📏 Đặt limit</button>
+                <button id="quickResetWifiBtn" type="button" class="ctrl-btn ctrl-btn-wifi" title="Cấu hình lại WiFi cho ESP32">📶 Đổi WiFi</button>
+              </div>
+
+              <div class="pen-angle-row">
+                <label>Góc nhấc bút<input id="penUp" type="number" min="0" max="180" value="110"></label>
+                <label>Góc hạ bút<input id="penDown" type="number" min="0" max="180" value="80"></label>
+              </div>
             </div>
-          </div>
-          <div class="pen-angle-row">
-            <label>Góc nhấc bút<input id="penUp" type="number" min="0" max="180" value="110"></label>
-            <label>Góc hạ bút<input id="penDown" type="number" min="0" max="180" value="45"></label>
-          </div>
-          <div class="input-row">
-            <label>Bước di chuyển<input id="steps" type="number" min="1" value="10"></label>
-            <label>Tốc độ<input id="speed" type="number" min="1" value="500"></label>
-            <button id="sendSpeed" type="button" class="button button-dark">Lưu</button>
           </div>
         </article>
       </div>
-      <article class="panel calibration-panel" aria-labelledby="calibration-title">
-        <div class="panel-title"><h3 id="calibration-title">Căn chỉnh gốc và hành trình</h3><span class="pill pill-lime">THỰC TẾ</span></div>
-        <p class="muted calibration-help">Đưa máy đến vị trí cần đặt bằng các nút điều khiển, sau đó bấm đúng nút tương ứng. Đặt giới hạn sẽ tự tính tỉ lệ X/Y để cùng một đơn vị di chuyển có cùng phần trăm hành trình.</p>
-        <div class="calibration-actions">
-          <button type="button" data-topic="control/cal/origin" data-payload="">Đặt gốc tại vị trí hiện tại</button>
-          <button type="button" data-topic="control/cal/set" data-payload="">Đặt giới hạn tại vị trí hiện tại</button>
-          <button type="button" class="button-purple" data-topic="control/cal/sync" data-payload="">Đồng bộ tỉ lệ X/Y</button>
-        </div>
-        <div class="calibration-readout"><span>Giới hạn X <b id="calLimitX">--</b></span><span>Giới hạn Y <b id="calLimitY">--</b></span><span>Tỉ lệ X <b id="calScaleX">--</b></span><span>Tỉ lệ Y <b id="calScaleY">--</b></span></div>
-      </article>
+
       <article class="panel telemetry-panel" aria-label="Theo dõi vị trí và môi trường">
         <div class="panel-title"><h3>Theo dõi vị trí & môi trường</h3><span class="pill pill-lime">DỮ LIỆU TRỰC TIẾP</span></div>
-        <div class="telemetry-grid">
-          <div class="position-chart-card">
-            <div class="chart-heading"><b>Vị trí động cơ theo thời gian</b><span>mm</span></div>
-            <canvas id="positionChart" height="220" aria-label="Biểu đồ line vị trí trục X và Y"></canvas>
-            <div class="chart-legend"><span><i class="legend-x"></i>Trục X <b id="axisXValue">0 mm</b></span><span><i class="legend-y"></i>Trục Y <b id="axisYValue">0 mm</b></span></div>
+        
+        <!-- HÀNG 1: 4 ĐỒNG HỒ GAUGE (2 ĐỘNG CƠ X/Y + 2 DHT11) -->
+        <div class="gauges-quad-grid">
+          <!-- Gauge 1: Động cơ Trục X -->
+          <div class="gauge-card">
+            <div class="gauge-header">
+              <span class="motor-icon motor-x-icon">X</span>
+              <div>
+                <span class="gauge-label">ĐỘNG CƠ TRỤC X</span>
+                <small id="motorXNote" class="gauge-note">0 mm · Giới hạn: 0..230</small>
+              </div>
+            </div>
+            <div id="motorXGaugeContainer" class="gauge-canvas" aria-label="Đồng hồ đo vị trí động cơ X"></div>
           </div>
-          <div class="environment-card">
-            <div class="environment-item"><span class="temperature-icon">℃</span><div><span>NHIỆT ĐỘ DHT11</span><strong id="temperatureValue">-- °C</strong><small id="temperatureNote">Chờ dữ liệu DHT11</small></div></div>
-            <div class="environment-item"><span class="humidity-icon">♒</span><div><span>ĐỘ ẨM DHT11</span><strong id="humidityValue">-- %</strong><small id="humidityNote">Chờ dữ liệu DHT11</small></div></div>
+
+          <!-- Gauge 2: Động cơ Trục Y -->
+          <div class="gauge-card">
+            <div class="gauge-header">
+              <span class="motor-icon motor-y-icon">Y</span>
+              <div>
+                <span class="gauge-label">ĐỘNG CƠ TRỤC Y</span>
+                <small id="motorYNote" class="gauge-note">0 mm · Giới hạn: 0..850</small>
+              </div>
+            </div>
+            <div id="motorYGaugeContainer" class="gauge-canvas" aria-label="Đồng hồ đo vị trí động cơ Y"></div>
+          </div>
+
+          <!-- Gauge 3: Nhiệt độ DHT11 -->
+          <div class="gauge-card">
+            <div class="gauge-header">
+              <span class="temperature-icon">℃</span>
+              <div>
+                <span class="gauge-label">NHIỆT ĐỘ DHT11</span>
+                <small id="temperatureNote" class="gauge-note">Chờ dữ liệu DHT11</small>
+              </div>
+            </div>
+            <div id="tempGaugeContainer" class="gauge-canvas" aria-label="Đồng hồ đo nhiệt độ DHT11"></div>
+            <span id="temperatureValue" style="display: none;">-- °C</span>
+          </div>
+
+          <!-- Gauge 4: Độ ẩm DHT11 -->
+          <div class="gauge-card">
+            <div class="gauge-header">
+              <span class="humidity-icon">♒</span>
+              <div>
+                <span class="gauge-label">ĐỘ ẨM DHT11</span>
+                <small id="humidityNote" class="gauge-note">Chờ dữ liệu DHT11</small>
+              </div>
+            </div>
+            <div id="humGaugeContainer" class="gauge-canvas" aria-label="Đồng hồ đo độ ẩm DHT11"></div>
+            <span id="humidityValue" style="display: none;">-- %</span>
+          </div>
+        </div>
+
+        <!-- HÀNG 2: 2 ĐỒ THỊ ĐƯỜNG (VỊ TRÍ ĐỘNG CƠ & DHT11 THEO THỜI GIAN) - KHUNG CỐ ĐỊNH ĐỨNG YÊN KHÔNG TRÔI -->
+        <div class="charts-dual-grid">
+          <!-- Đồ thị 1: Vị trí 2 động cơ theo thời gian (Nguyên bản Canvas) -->
+          <div class="chart-card">
+            <div class="chart-heading">
+              <b>Vị trí động cơ theo thời gian</b>
+              <span>% hành trình</span>
+            </div>
+            <canvas id="positionChart" height="230" aria-label="Biểu đồ line vị trí trục X và Y"></canvas>
+            <div class="chart-legend">
+              <span><i class="legend-x"></i>Trục X <b id="axisXValue">0 mm</b></span>
+              <span><i class="legend-y"></i>Trục Y <b id="axisYValue">0 mm</b></span>
+            </div>
+          </div>
+
+          <!-- Đồ thị 2: Đồ thị Nhiệt độ & Độ ẩm DHT11 theo thời gian -->
+          <div class="chart-card">
+            <div class="chart-heading">
+              <b>Đồ thị Nhiệt độ & Độ ẩm DHT11</b>
+              <span>Đứng yên cố định · °C / %</span>
+            </div>
+            <div id="dhtChartContainer" class="trend-chart-canvas" aria-label="Đồ thị nhiệt độ và độ ẩm DHT11"></div>
+            <div class="chart-legend">
+              <span><i class="legend-temp"></i>Nhiệt độ <b id="dhtChartTempValue">-- °C</b></span>
+              <span><i class="legend-hum"></i>Độ ẩm <b id="dhtChartHumValue">-- %</b></span>
+            </div>
           </div>
         </div>
       </article>
@@ -121,30 +271,198 @@
       <div class="section-heading"><div><p class="eyebrow">02 · TÁC VỤ</p><h2 id="draw-title">Vẽ tự động</h2></div><span class="section-number">02</span></div>
       <article class="panel drawing-panel">
         <div class="drawing-copy"><h3>Gửi một hình đơn giản</h3><p class="muted">ESP32 sẽ nhận đường chạy, di chuyển đến từng điểm và tự nâng/hạ bút.</p></div>
-        <div class="drawing-fields">
-          <label>Kích thước <output id="scaleOut">90%</output><input id="scale" type="range" min="10" max="100" value="90"></label>
-        </div>
         <div class="drawing-actions">
-          <button id="square" type="button" class="button">Vẽ hình vuông □</button>
-          <button id="circle" type="button" class="button button-purple">Vẽ hình tròn ○</button>
-          <button type="button" class="button-danger" data-topic="control/stop" data-payload="">Dừng bản vẽ</button>
+          <button id="square" type="button" class="button" title="Vẽ bao quanh toàn bộ hành trình limit 2 trục (X: 0..230mm, Y: 0..850mm)">Vẽ khung máy (Hết 2 trục) ⬚</button>
+          <button id="circle" type="button" class="button button-purple" title="Vẽ hình tròn hoàn hảo (tỷ lệ 1:1, chuẩn đường kính, không méo elip)">Vẽ hình tròn ⏺</button>
+          <div class="circle-input-wrap" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;">
+            <label for="circleDiameter">Đường kính:</label>
+            <input id="circleDiameter" type="number" min="10" max="800" value="80" style="width:65px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;font-weight:700;text-align:center;">
+            <span>mm</span>
+          </div>
+          <button id="cancelShapeJobBtn" type="button" class="button-danger" data-topic="control/stop" data-payload="" title="Hủy toàn bộ lệnh vẽ đang chạy hoặc đang gửi">🛑 Hủy lệnh vẽ</button>
         </div>
-        <p id="jobMessage" class="job-message">Bản vẽ sẽ được nạp vào bộ nhớ ESP32 trước khi chạy.</p>
+
+        <!-- Khối hiển thị tiến độ vẽ (%) -->
+        <div class="drawing-progress-card">
+          <div class="progress-info-row">
+            <div class="progress-label-wrap">
+              <span class="progress-badge" id="jobStateBadge">SẴN SÀNG</span>
+              <strong class="progress-title" id="jobKindName">Chưa có bản vẽ</strong>
+            </div>
+            <div class="progress-percent-wrap">
+              <span class="progress-number" id="jobPercent">0</span><span class="progress-unit">%</span>
+            </div>
+          </div>
+          <div class="progress-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-fill" id="jobProgressBar" style="width: 0%;"></div>
+          </div>
+          <div class="progress-meta-row">
+            <span id="jobStepDetail">0 / 0 điểm</span>
+            <span id="jobMessage" class="job-message">Bản vẽ sẽ được nạp vào bộ nhớ ESP32 trước khi chạy.</span>
+          </div>
+        </div>
       </article>
     </section>
 
-    <section class="section compact-section" id="gallery" aria-labelledby="upload-title">
-      <div class="section-heading"><div><p class="eyebrow">03 · DỮ LIỆU</p><h2 id="upload-title">Lưu ảnh tham khảo</h2></div><span class="section-number">03</span></div>
-      <article class="panel upload-panel">
-        <div><p class="muted">Chọn ảnh để xem trước hình cần vẽ. Ảnh vẫn được lưu vào broker cho bước chuyển thành đường chạy.</p><input id="image" type="file" accept="image/*"><div id="imagePreviewWrap" class="image-preview-wrap" hidden><img id="imagePreview" alt="Ảnh xem trước bản vẽ"><span id="imagePreviewName"></span></div><button id="upload" type="button" class="button">Lưu ảnh ↗</button></div>
-        <pre id="log">Nhật ký hệ thống đã sẵn sàng.</pre>
+    <!-- ═══ IMAGE TO DRAWING PATH SECTION ═══ -->
+    <section class="section" id="imageDraw" aria-labelledby="image-draw-title">
+      <div class="section-heading"><div><p class="eyebrow">03 · ẢNH → VẼ</p><h2 id="image-draw-title">Vẽ từ ảnh</h2></div><span class="section-number">03</span></div>
+      <article class="panel image-draw-panel">
+
+        <!-- ── Header + file upload ── -->
+        <div class="image-draw-top">
+          <div class="image-draw-copy">
+            <h3>Chuyển ảnh thành đường vẽ CNC</h3>
+            <p class="muted">Tải ảnh lên → kéo / thu phóng ảnh trong khung máy → chọn chế độ vẽ viền hoặc tô màu → xem trước → gửi đến ESP32.</p>
+          </div>
+          <div class="image-upload-area">
+            <label class="file-drop-zone" id="fileDropZone">
+              <span class="drop-icon">📂</span>
+              <span class="drop-text">Kéo ảnh vào đây hoặc <u>chọn file</u></span>
+              <input id="drawImage" type="file" accept="image/*">
+            </label>
+          </div>
+        </div>
+
+        <!-- ── Mode selector tabs ── -->
+        <div class="img-mode-tabs" id="imgModeTabs">
+          <button class="img-mode-tab active" data-mode="outline" type="button">
+            <span class="mode-icon">✏️</span>
+            <span class="mode-label">Vẽ viền</span>
+            <span class="mode-desc">Tách cạnh – nét liền sạch</span>
+          </button>
+          <button class="img-mode-tab" data-mode="hatch" type="button">
+            <span class="mode-icon">🖌️</span>
+            <span class="mode-label">Tô màu</span>
+            <span class="mode-desc">Nét ngang song song</span>
+          </button>
+        </div>
+
+        <!-- ── Thanh điều khiển: Tăng / Giảm độ đậm nhạt Trắng - Đen & Tùy chọn vẽ viền khung ảnh ── -->
+        <div class="img-controls-grid" id="imgControlsGrid" style="grid-template-columns: 1fr; max-width: 540px; margin: 16px auto 22px auto; padding: 16px 24px; background: #ffffff; border-radius: 14px; box-shadow: 0 4px 18px rgba(0,0,0,0.06); border: 1.5px solid rgba(108, 92, 231, 0.2);">
+          <label class="img-ctrl" style="margin: 0;">
+            <div class="ctrl-header-row" style="margin-bottom: 8px;">
+              <span class="ctrl-name" style="font-size: 13px; font-weight: 800; color: #2d3436; display: flex; align-items: center; gap: 6px;">
+                🌓 Độ đậm nhạt Trắng - Đen (Kéo để chỉnh nét vẽ)
+              </span>
+              <span class="ctrl-val" id="threshOut" style="font-size: 15px; font-weight: 900; color: #6c5ce7;">50%</span>
+            </div>
+            <input id="threshold" type="range" min="15" max="240" value="128" style="width: 100%; cursor: pointer;">
+            <div style="display: flex; justify-content: space-between; font-size: 11px; color: #888; margin-top: 5px; font-weight: 600;">
+              <span>⚪ Sáng hơn (Ít nét đen)</span>
+              <span>Mặc định (50%)</span>
+              <span>⚫ Đậm hơn (Nhiều nét đen)</span>
+            </div>
+          </label>
+
+          <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 700; color: #2d3436; user-select: none;">
+              <input type="checkbox" id="drawImgBorderCheck" style="width: 18px; height: 18px; accent-color: #6c5ce7; cursor: pointer;">
+              <span>🖼️ Vẽ thêm khung viền bao quanh ảnh (Border Frame)</span>
+            </label>
+            <span style="font-size: 12px; color: #888; font-weight: 600;" id="borderStatusText">Tắt</span>
+          </div>
+        </div>
+
+        <!-- ── Interactive workspace: machine frame + draggable image ── -->
+        <div class="workspace-row">
+          <div class="canvas-card workspace-card">
+            <div class="canvas-label">
+              <span class="canvas-dot canvas-dot-original"></span>1. Ảnh Trắng - Đen xem trước (Vùng đen = Nét máy sẽ vẽ)
+              <span class="workspace-hint" id="wsHint">Kéo 4 góc · Cuộn chuột · Kéo ảnh để di chuyển</span>
+            </div>
+            <div class="workspace-container" id="workspaceContainer">
+              <canvas id="workspaceCanvas" aria-label="Ảnh Trắng - Đen xem trước"></canvas>
+            </div>
+            <div class="workspace-toolbar">
+              <button type="button" class="ws-btn" id="wsZoomIn" title="Phóng to (hoặc phím +)">＋</button>
+              <button type="button" class="ws-btn" id="wsZoomOut" title="Thu nhỏ (hoặc phím -)">－</button>
+              <button type="button" class="ws-btn" id="wsFitBtn" title="Vừa vặn khung máy (phím 0)">⊞ Vừa khung</button>
+              <button type="button" class="ws-btn" id="wsCenterBtn" title="Căn giữa khung máy">◎ Căn giữa</button>
+              <button type="button" class="ws-btn" id="wsResetBtn" title="Đặt lại kích thước 100%">↺ 100%</button>
+              <span class="ws-info" id="wsScaleInfo">88%</span>
+            </div>
+          </div>
+
+          <!-- ── CNC path preview ── -->
+          <div class="canvas-card canvas-card-preview">
+            <div class="canvas-label">
+              <span class="canvas-dot canvas-dot-path"></span>2. Đường vẽ CNC thực tế (Đầu bút chạy)
+              <b id="pathPointCount"></b>
+              <span id="pathWarnBadge" class="path-warn-badge" style="display:none;">⚠️ Quá 3000 lệnh</span>
+            </div>
+            <div class="workspace-container">
+              <canvas id="pathCanvas" aria-label="Đường chạy CNC"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Actions ── -->
+        <div class="image-draw-actions">
+          <div class="image-actions-buttons">
+            <button id="sendImagePath" type="button" class="button button-purple" disabled>🖨 Gửi đường vẽ đến ESP32</button>
+            <button id="cancelImageJobBtn" type="button" class="button-danger" data-topic="control/stop" data-payload="" title="Hủy toàn bộ lệnh vẽ đang chạy hoặc đang gửi">🛑 Hủy lệnh vẽ</button>
+          </div>
+          <div class="drawing-progress-card image-progress-card" id="imageProgressCard">
+            <div class="progress-info-row">
+              <div class="progress-label-wrap">
+                <span class="progress-badge" id="imageJobBadge">CHỜ ẢNH</span>
+                <strong class="progress-title" id="imageJobKindName">Vẽ từ ảnh</strong>
+              </div>
+              <div class="progress-percent-wrap">
+                <span class="progress-number" id="imageJobPercent">0</span><span class="progress-unit">%</span>
+              </div>
+            </div>
+            <div class="progress-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+              <div class="progress-fill progress-fill-purple" id="imageJobProgressBar" style="width: 0%;"></div>
+            </div>
+            <div class="progress-meta-row">
+              <span id="imageJobStepDetail">0 / 0 điểm</span>
+              <p id="imageJobMessage" class="job-message">Chọn ảnh để bắt đầu.</p>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <!-- ═══ 04 · NHẬT KÝ HỆ THỐNG ═══ -->
+    <section class="section" id="systemLog" aria-labelledby="log-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">04 · NHẬT KÝ</p>
+          <h2 id="log-title">Nhật ký hệ thống & MQTT</h2>
+        </div>
+        <span class="section-number">04</span>
+      </div>
+
+      <article class="panel log-panel">
+        <div class="log-panel-header">
+          <div class="log-panel-meta">
+            <span class="pill pill-lime">REALTIME</span>
+            <span id="logCount" class="log-count-badge">0 sự kiện</span>
+          </div>
+          <button id="clearLogBtn" type="button" class="button button-light btn-sm">🗑 Xóa log</button>
+        </div>
+
+        <!-- Main Terminal Log Screen -->
+        <div class="log-terminal-wrap">
+          <div class="terminal-bar">
+            <div class="terminal-dots">
+              <span class="dot-red"></span><span class="dot-yellow"></span><span class="dot-green"></span>
+            </div>
+            <span class="terminal-title">MQTT CONSOLE · cnc/cnc01/#</span>
+          </div>
+          <pre id="log" class="terminal-body">Chờ kết nối broker...</pre>
+        </div>
       </article>
     </section>
 
     <footer class="footer"><span>MINICNC · ESP32-C5</span><span>Điều khiển rõ ràng · thao tác an toàn</span></footer>
   </main>
+  <script src="echarts.min.js"></script>
+  <script>if (!window.echarts) document.write('<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"><\/script>');</script>
   <script src="mqtt.min.js"></script>
-  <script>if (!window.mqtt) document.write('<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"><\\/script>');</script>
-  <script src="script.js?v=dht11"></script>
+  <script>if (!window.mqtt) document.write('<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"><\/script>');</script>
+  <script src="script.js?v=circle_fix_2"></script>
 </body>
 </html>
