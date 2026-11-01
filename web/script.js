@@ -276,7 +276,8 @@ async function connect(event) {
   state.status = null;
   state.user = $('username').value.trim();
   state.password = $('password').value;
-  const config = { host: $('brokerHost').value.trim(), port: $('brokerPort').value, username: state.user, password: state.password };
+  const nativeApp = document.documentElement.classList.contains('native-app');
+  const config = { host: nativeApp ? $('brokerHost').value.trim() : '', port: nativeApp ? $('brokerPort').value : '', username: state.user, password: state.password };
   try { localStorage.setItem('minicnc.connection', JSON.stringify({ host: config.host, port: config.port, username: config.username })); } catch (_) {}
   await ensureTransport().connect(config);
   state.client = state.transport.client;

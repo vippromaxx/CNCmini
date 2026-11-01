@@ -1,0 +1,471 @@
+{
+  "version": 1,
+  "author": "MiniCNC",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-c5-devkitc-1",
+      "id": "esp",
+      "top": 50,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-a4988",
+      "id": "driverX",
+      "top": 40,
+      "left": 260,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-stepper-motor",
+      "id": "motorX",
+      "top": 10,
+      "left": 450,
+      "attrs": {
+        "size": "17"
+      }
+    },
+    {
+      "type": "wokwi-a4988",
+      "id": "driverY",
+      "top": 240,
+      "left": 260,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-stepper-motor",
+      "id": "motorY",
+      "top": 230,
+      "left": 450,
+      "attrs": {
+        "size": "17"
+      }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "pen",
+      "top": 400,
+      "left": 250,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd",
+      "top": -160,
+      "left": 200,
+      "attrs": {
+        "pins": "i2c",
+        "i2cAddress": "0x27"
+      }
+    },
+    {
+      "type": "wokwi-dht22",
+      "id": "dht",
+      "top": -150,
+      "left": -180,
+      "attrs": {
+        "temperature": "28",
+        "humidity": "65"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "dhtPullup",
+      "top": -70,
+      "left": -70,
+      "attrs": {
+        "value": "10000"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "light",
+      "top": 180,
+      "left": -200,
+      "attrs": {
+        "color": "white"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "lightR",
+      "top": 240,
+      "left": -180,
+      "attrs": {
+        "value": "330"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "activity",
+      "top": 310,
+      "left": -200,
+      "attrs": {
+        "color": "green"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "activityR",
+      "top": 370,
+      "left": -180,
+      "attrs": {
+        "value": "330"
+      }
+    },
+    {
+      "type": "wokwi-logic-analyzer",
+      "id": "logic",
+      "top": 450,
+      "left": -50,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-text",
+      "id": "title",
+      "top": -230,
+      "left": -80,
+      "attrs": {
+        "text": "MiniCNC Wokwi - broker may tinh :1883 / web :3000 / user1"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "labelX",
+      "top": -25,
+      "left": 460,
+      "attrs": {
+        "text": "TRUC X"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "labelY",
+      "top": 195,
+      "left": 460,
+      "attrs": {
+        "text": "TRUC Y"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "labelDht",
+      "top": -200,
+      "left": -210,
+      "attrs": {
+        "text": "DHT22 mo phong"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "labelPen",
+      "top": 380,
+      "left": 260,
+      "attrs": {
+        "text": "SERVO NANG / HA BUT"
+      }
+    }
+  ],
+  "connections": [
+    [
+      "esp:TX",
+      "$serialMonitor:RX",
+      "",
+      []
+    ],
+    [
+      "esp:RX",
+      "$serialMonitor:TX",
+      "",
+      []
+    ],
+    [
+      "esp:4",
+      "driverX:STEP",
+      "green",
+      []
+    ],
+    [
+      "esp:5",
+      "driverX:DIR",
+      "blue",
+      []
+    ],
+    [
+      "esp:23",
+      "driverX:ENABLE",
+      "orange",
+      []
+    ],
+    [
+      "esp:24",
+      "driverY:STEP",
+      "green",
+      []
+    ],
+    [
+      "esp:0",
+      "driverY:DIR",
+      "blue",
+      []
+    ],
+    [
+      "esp:1",
+      "driverY:ENABLE",
+      "orange",
+      []
+    ],
+    [
+      "esp:3V3",
+      "driverX:VDD",
+      "red",
+      []
+    ],
+    [
+      "esp:3V3",
+      "driverY:VDD",
+      "red",
+      []
+    ],
+    [
+      "esp:GND.1",
+      "driverX:GND.1",
+      "black",
+      []
+    ],
+    [
+      "esp:GND.1",
+      "driverY:GND.1",
+      "black",
+      []
+    ],
+    [
+      "driverX:RESET",
+      "driverX:SLEEP",
+      "purple",
+      []
+    ],
+    [
+      "driverY:RESET",
+      "driverY:SLEEP",
+      "purple",
+      []
+    ],
+    [
+      "driverX:1B",
+      "motorX:B-",
+      "orange",
+      []
+    ],
+    [
+      "driverX:1A",
+      "motorX:B+",
+      "orange",
+      []
+    ],
+    [
+      "driverX:2A",
+      "motorX:A+",
+      "blue",
+      []
+    ],
+    [
+      "driverX:2B",
+      "motorX:A-",
+      "blue",
+      []
+    ],
+    [
+      "driverY:1B",
+      "motorY:B-",
+      "orange",
+      []
+    ],
+    [
+      "driverY:1A",
+      "motorY:B+",
+      "orange",
+      []
+    ],
+    [
+      "driverY:2A",
+      "motorY:A+",
+      "blue",
+      []
+    ],
+    [
+      "driverY:2B",
+      "motorY:A-",
+      "blue",
+      []
+    ],
+    [
+      "esp:8",
+      "pen:PWM",
+      "purple",
+      []
+    ],
+    [
+      "esp:5V",
+      "pen:V+",
+      "red",
+      []
+    ],
+    [
+      "esp:GND.2",
+      "pen:GND",
+      "black",
+      []
+    ],
+    [
+      "esp:10",
+      "lcd:SDA",
+      "green",
+      []
+    ],
+    [
+      "esp:7",
+      "lcd:SCL",
+      "blue",
+      []
+    ],
+    [
+      "esp:5V",
+      "lcd:VCC",
+      "red",
+      []
+    ],
+    [
+      "esp:GND.2",
+      "lcd:GND",
+      "black",
+      []
+    ],
+    [
+      "esp:9",
+      "dht:SDA",
+      "green",
+      []
+    ],
+    [
+      "esp:3V3",
+      "dht:VCC",
+      "red",
+      []
+    ],
+    [
+      "esp:GND.1",
+      "dht:GND",
+      "black",
+      []
+    ],
+    [
+      "dht:SDA",
+      "dhtPullup:1",
+      "green",
+      []
+    ],
+    [
+      "dhtPullup:2",
+      "esp:3V3",
+      "red",
+      []
+    ],
+    [
+      "esp:6",
+      "lightR:1",
+      "green",
+      []
+    ],
+    [
+      "lightR:2",
+      "light:A",
+      "green",
+      []
+    ],
+    [
+      "light:C",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "esp:3",
+      "activityR:1",
+      "green",
+      []
+    ],
+    [
+      "activityR:2",
+      "activity:A",
+      "green",
+      []
+    ],
+    [
+      "activity:C",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "esp:4",
+      "logic:D0",
+      "green",
+      []
+    ],
+    [
+      "esp:5",
+      "logic:D1",
+      "blue",
+      []
+    ],
+    [
+      "esp:23",
+      "logic:D2",
+      "orange",
+      []
+    ],
+    [
+      "esp:24",
+      "logic:D3",
+      "green",
+      []
+    ],
+    [
+      "esp:0",
+      "logic:D4",
+      "blue",
+      []
+    ],
+    [
+      "esp:1",
+      "logic:D5",
+      "orange",
+      []
+    ],
+    [
+      "esp:8",
+      "logic:D6",
+      "purple",
+      []
+    ],
+    [
+      "esp:6",
+      "logic:D7",
+      "yellow",
+      []
+    ],
+    [
+      "esp:GND.2",
+      "logic:GND",
+      "black",
+      []
+    ]
+  ],
+  "serialMonitor": {
+    "display": "always",
+    "newline": "lf"
+  },
+  "dependencies": {}
+}

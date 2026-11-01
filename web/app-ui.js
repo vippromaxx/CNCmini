@@ -1,5 +1,6 @@
 /* Mobile layout is composed from the existing controls, not a second UI implementation. */
 (() => {
+  const nativeApp = document.documentElement.classList.contains('native-app');
   const main = document.querySelector('main');
   const auth = document.querySelector('.auth-panel');
   const telemetry = document.querySelector('.telemetry-panel');
@@ -20,11 +21,13 @@
   monitoring.append(telemetry, $('systemLog'));
   main.insertBefore(monitoring, settings);
 
-  $('connectForm').insertAdjacentHTML('afterbegin', `
+  if (nativeApp) {
+    $('connectForm').insertAdjacentHTML('afterbegin', `
     <label>IP / hostname máy broker<input id="brokerHost" placeholder="Ví dụ: 192.168.1.10" autocapitalize="none" spellcheck="false" autocomplete="off"></label>
     <label>Cổng web<input id="brokerPort" type="number" min="1" max="65535" value="3000" inputmode="numeric"></label>
-    <p class="muted connection-help">Cùng Wi-Fi với máy broker. Trên trình duyệt, để trống IP để dùng máy chủ hiện tại.</p>`);
-  $('brokerHost').required = document.documentElement.classList.contains('native-app');
+    <p class="muted connection-help">Điện thoại và máy broker cần cùng mạng Wi-Fi.</p>`);
+    $('brokerHost').required = true;
+  }
   const device = document.querySelector('.auth-meta-item strong');
   if (device) device.dataset.deviceId = '';
   settings.insertAdjacentHTML('beforeend', `
@@ -38,8 +41,10 @@
     </article>`);
   try {
     const saved = JSON.parse(localStorage.getItem('minicnc.connection') || '{}');
-    $('brokerHost').value = saved.host || '';
-    $('brokerPort').value = saved.port || '3000';
+    if (nativeApp) {
+      $('brokerHost').value = saved.host || '';
+      $('brokerPort').value = saved.port || '3000';
+    }
     $('username').value = saved.username || '';
   } catch (_) { /* A corrupt local preference must not prevent launch. */ }
 
@@ -93,7 +98,7 @@
   }
   mobile.addEventListener('change', layout);
   layout();
-  selectPage($('brokerHost').required && !$('brokerHost').value ? 'settings' : 'controls');
+  selectPage(nativeApp && !$('brokerHost').value ? 'settings' : 'controls');
 
   $('simulationMode').addEventListener('change', event => {
     state.transport?.disconnect();

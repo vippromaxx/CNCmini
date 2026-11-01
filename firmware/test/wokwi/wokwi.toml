@@ -1,0 +1,7 @@
+[wokwi]
+version = 1
+firmware = '.pio/build/wokwi/firmware.factory.bin'
+elf = '.pio/build/wokwi/firmware.elf'
+rfc2217ServerPort = 4000
+gdbServerPort = 3333
+vcdFile = '../.runtime/cnc-signals.vcd'

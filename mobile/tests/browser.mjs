@@ -157,12 +157,14 @@ try {
   const desktop = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const desktopErrors = [];
   desktop.on('pageerror', error => desktopErrors.push(error.message));
+  await desktop.addInitScript(() => localStorage.setItem('minicnc.connection', JSON.stringify({ host: 'old-broker.invalid', port: '3001', username: 'viewer' })));
   await desktop.goto(url);
-  await desktop.locator('#brokerHost').fill('');
+  assert.equal(await desktop.locator('#brokerHost, #brokerPort').count(), 0, 'Browser login must not show APK connection fields');
   await desktop.locator('#username').fill('viewer');
   await desktop.locator('#password').fill('fixture-only');
   await desktop.locator('#connectBtn').click();
   await desktop.waitForFunction(() => isEspConnected());
+  assert.equal(await desktop.evaluate(() => state.transport.baseUrl), url, 'Browser always uses its own broker, ignoring old APK address preferences');
   assert.equal(await desktop.locator('#controls').isVisible(), true);
   assert.equal(await desktop.locator('#imageDraw').isVisible(), true);
   const beforeViewerExit = commands.filter(command => command.topic.endsWith('/stop')).length;
