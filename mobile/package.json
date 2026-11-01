@@ -1,0 +1,27 @@
+{
+  "name": "minicnc-android",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "sync": "npm run build && cap sync android",
+    "apk": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-apk.ps1",
+    "test": "node --test ../tests/*.test.cjs",
+    "test:browser": "node tests/browser.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/app-launcher": "^8.0.1",
+    "@capacitor/core": "^8.6.0",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/space-grotesk": "^5.3.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
+    "@playwright/test": "^1.64.1",
+    "esbuild": "^0.28.2",
+    "mqtt": "^5.16.1"
+  }
+}

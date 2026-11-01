@@ -6,9 +6,6 @@
 		{
 			"name": "CNC",
 			"path": "../../../../../../../Documents/PlatformIO/Projects/CNC"
-		},
-		{
-			"path": "../../TaiLieu"
 		}
 	],
 	"settings": {}

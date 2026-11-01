@@ -15,3 +15,11 @@ recovery/nvs_dump*.txt
 .pio/
 *.tmp
 *.bak
+mobile/node_modules/
+mobile/www/
+mobile/artifacts/
+mobile/.tools/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/**/build/
+mobile/test-results/

@@ -26,12 +26,15 @@
 // ═════════════════════════════════════════════════════════════════════════════════════════
 
 /** Tên định danh thiết bị máy CNC */
-const DEVICE = 'cnc01';
+let DEVICE = 'cnc01';
 
 /**
  * Trạng thái ứng dụng toàn cục (State Store)
  */
 const state = {
+  simulation: false,
+  uploadGeneration: 0,
+  transport: null,
   client: null,             // Đối tượng MQTT Client (Paho/MQTT.js)
   user: '',                 // Tên tài khoản MQTT Broker
   password: '',             // Mật khẩu MQTT Broker
@@ -74,9 +77,9 @@ const imgWs = {
   mode: 'outline',          // Chế độ vẽ: 'outline' (vẽ viền) hoặc 'hatch' (tô màu nét ngang)
   outlineStyle: 'boundary', // Kiểu tách viền: 'boundary' (viền khối logo/chữ) hoặc 'canny' (viền mỏng 1-pixel)
   contrast: 0,              // Độ tương phản bổ sung (-100 đến +100)
-  threshold: 128,           // Ngưỡng lọc trắng - đen nhị phân (15 đến 240)
-  simplify: 1,              // Mức đơn giản hóa RDP đường viền (1 đến 10)
-  minLen: 8,                // Độ dài nét tối thiểu để giữ chi tiết nhỏ (px)
+  threshold: 50,            // Giữ viền đen, loại phần màu đỏ của logo (15 đến 240)
+  simplify: 2,              // Giảm rung viền sau khi nội suy (1 đến 10)
+  minLen: 12,               // Bỏ các nét vụn quá ngắn (px)
   hatchSpacing: 3,          // Bước nét tô ngang liền kề (1 đến 20 mm)
   drawBorder: false,        // Tùy chọn: Vẽ thêm khung viền bao quanh chính bức ảnh
   isDragging: false,        // Cờ chuột đang kéo di chuyển ảnh
@@ -177,33 +180,80 @@ function setConnection(label, good = false) {
  * @returns {boolean}
  */
 function publish(rest, payload = '', section = '') {
-  const fullTopic = topic(rest);
-  const sec = section || getSectionFromTopic(rest);
-  if (!state.client?.connected) {
-    log(`Chưa kết nối broker. Không thể gửi [${fullTopic}]`, sec);
-    return false;
+  const sent = state.transport?.publish(rest, payload) || false;
+  if (sent && rest !== 'control/stop') {
+    state.stopMessage = '';
+    if ($('stopState')) $('stopState').textContent = 'Phiên điều khiển đang hoạt động';
   }
-  const payloadStr = payload === '' ? '' : (String(payload).length > 80 ? ` · (${String(payload).length} bytes)` : ` · payload: ${payload}`);
-  state.client.publish(fullTopic, String(payload), { qos: 1 }, error => {
-    if (error) {
-      log(`❌ Lỗi gửi ${fullTopic}: ${error.message}`, sec);
-    } else {
-      log(`📤 ${fullTopic}${payloadStr}`, sec);
-    }
-  });
-  return true;
+  log(sent ? `Đã gửi ${topic(rest)}` : `Không gửi ${topic(rest)}: kiểm tra kết nối, ESP32 và quyền điều khiển.`, section || getSectionFromTopic(rest));
+  return sent;
 }
 
 /**
  * Kiểm tra xem phần cứng ESP32 thực tế có đang hoạt động và gửi dữ liệu hay không
  * @returns {boolean}
  */
-function isEspConnected() {
-  if (!state.client?.connected) return false;
-  if (!state.status) return false;
-  if (state.status.state === 'offline') return false;
-  // Nếu quá 25 giây không có status mới từ ESP32 thì coi như mất kết nối phần cứng
-  if (Date.now() - (state._lastStatusReceivedTime || 0) > 25000) return false;
+function isEspConnected() { return state.transport?.ready() || false; }
+
+function invalidateUpload() {
+  state.isUploadingJob = false;
+  state.uploadGeneration++;
+  if (state.transport) state.transport.uploading = false;
+  if (state.virtualJob) stopVirtualJob();
+}
+
+function showStopState(message) {
+  state.stopMessage = message;
+  for (const id of ['stopState', 'jobMessage', 'imageJobMessage', 'jobStateBadge', 'imageJobBadge']) {
+    if ($(id)) $(id).textContent = message;
+  }
+}
+
+function ensureTransport() {
+  if (state.transport) return state.transport;
+  state.transport = new MiniCncConnection.Connection({
+    mqtt: window.mqtt, fetch: window.fetch.bind(window),
+    page: document.documentElement.classList.contains('native-app') ? null : location,
+    onState: (message, connected = false) => {
+      state.client = state.transport?.client;
+      state.lock = state.transport?.lock || '';
+      if (message === state.connectionLabel && connected === state.connectionGood) return;
+      state.connectionLabel = message;
+      state.connectionGood = connected;
+      setConnection(message, connected);
+      log(message, 'KẾT NỐI');
+      if (state.transport) {
+        DEVICE = state.transport.device;
+        document.querySelectorAll('.machine-tag, [data-device-id]').forEach(el => el.textContent = `ESP32 · ${DEVICE}`);
+      }
+    },
+    onInvalidate: invalidateUpload,
+    onStop: showStopState,
+    onMessage: (receivedTopic, value, packet) => {
+      if (receivedTopic === topic('lock')) { state.lock = value; return; }
+      if (receivedTopic === 'sensor/temperature') { updateTempGauge(Number(value)); return; }
+      if (receivedTopic === 'sensor/humidity') { updateHumGauge(Number(value)); return; }
+      if (receivedTopic !== topic('status') || packet.retain) return;
+      try {
+        const data = JSON.parse(value);
+        if (data.state === 'offline') { state.status = data; return; }
+        state._lastStatusReceivedTime = Date.now();
+        renderStatus(data);
+        if (state.stopMessage) showStopState(state.stopMessage);
+        else if ($('stopState')) $('stopState').textContent = ['run', 'load'].includes(data.job?.s) ? 'Máy đang thực hiện công việc' : 'ESP32 trực tuyến · chờ thao tác';
+      } catch (error) { log(`Status không hợp lệ: ${error.message}`, 'LỖI'); }
+    }
+  });
+  return state.transport;
+}
+
+function canStartJob() {
+  if (state.simulation) return !state.isUploadingJob;
+  if (!isEspConnected()) { log('Chờ dữ liệu ESP32 mới trước khi điều khiển.', 'LỖI'); return false; }
+  if (state.isUploadingJob || ['run', 'load'].includes(state.status?.job?.s) || state.transport.stopping) {
+    log('Dừng công việc hiện tại trước khi gửi bản vẽ mới.', 'LỖI'); return false;
+  }
+  if (state.lock && state.lock !== state.user) { log('Máy đang được tài khoản khác điều khiển.', 'LỖI'); return false; }
   return true;
 }
 
@@ -215,100 +265,21 @@ function isEspConnected() {
  * Khởi tạo kết nối MQTT WebSocket với Broker Node.js
  * @param {Event} event - Sự kiện submit form đăng nhập
  */
-function connect(event) {
-  event.preventDefault();
+async function connect(event) {
+  event?.preventDefault();
   if (!window.mqtt) return log('Không tải được thư viện MQTT.', 'LỖI');
-  if (state.client) state.client.end(true);
-
+  state.simulation = false;
+  state.stopMessage = '';
+  state.lock = '';
+  if ($('stopState')) $('stopState').textContent = 'Chờ ESP32 trực tuyến';
+  if ($('simulationMode')) $('simulationMode').checked = false;
+  state.status = null;
   state.user = $('username').value.trim();
   state.password = $('password').value;
-  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  const host = location.host || `${location.hostname || '127.0.0.1'}:3000`;
-  const url = `${scheme}://${host}/mqtt`;
-
-  setConnection('Đang kết nối...');
-  log(`Đang kết nối broker: ${url} (User: ${state.user})...`, '01·KẾT NỐI');
-
-  state.client = mqtt.connect(url, {
-    clientId: `web-${Math.random().toString(16).slice(2)}`,
-    username: state.user,
-    password: state.password,
-    reconnectPeriod: 2000,
-    clean: true
-  });
-
-  // Khi kết nối thành công: đăng ký nhận các topic cốt lõi
-  state.client.on('connect', () => {
-    setConnection('Đã kết nối', true);
-    log(`✅ Đã kết nối broker thành công (${url})`, '01·KẾT NỐI');
-    log(`📥 Subscribed: ${topic('status')} & ${topic('lock')}`, '01·KẾT NỐI');
-    state.client.subscribe([topic('status'), topic('lock'), 'sensor/temperature', 'sensor/humidity'], { qos: 1 });
-  });
-
-  // Xử lý các tin nhắn MQTT gửi đến trình duyệt
-  state.client.on('message', (receivedTopic, payload) => {
-    const value = payload.toString();
-
-    // 1. Quản lý trạng thái khóa điều khiển máy
-    if (receivedTopic.endsWith('/lock')) {
-      state.lock = value;
-      log(`📥 ${receivedTopic} -> ${value ? `Khóa bởi ${value}` : 'Đã mở khóa'}`, 'LOCK');
-      return;
-    }
-
-    // 2. Dữ liệu cảm biến nhiệt độ riêng lẻ
-    if (receivedTopic === 'sensor/temperature' || receivedTopic.endsWith('/temperature')) {
-      const val = parseFloat(value);
-      if (!isNaN(val)) {
-        updateTempGauge(val);
-        if ($('temperatureNote')) $('temperatureNote').textContent = 'sensor/temperature';
-      }
-    }
-
-    // 3. Dữ liệu cảm biến độ ẩm riêng lẻ
-    if (receivedTopic === 'sensor/humidity' || receivedTopic.endsWith('/humidity')) {
-      const val = parseFloat(value);
-      if (!isNaN(val)) {
-        updateHumGauge(val);
-        if ($('humidityNote')) $('humidityNote').textContent = 'sensor/humidity';
-      }
-    }
-
-    // 4. Gói tin Status định kỳ tổng hợp từ ESP32
-    if (receivedTopic.endsWith('/status')) {
-      try {
-        const data = JSON.parse(value);
-        if (data.state !== 'offline') {
-          state._lastStatusReceivedTime = Date.now();
-          // Nếu đang chạy mô phỏng ảo mà máy thật phản hồi -> ngắt ngay chế độ ảo
-          if (state.virtualJob) {
-            clearInterval(state.virtualJob.intervalId);
-            state.virtualJob = null;
-            log('⚡ ESP32 thực tế đã phản hồi, kết thúc chế độ mô phỏng.', 'STATUS');
-          }
-        }
-        renderStatus(data);
-
-        // Hạn chế log status để tránh tràn khung nhật ký (tối đa 5s/lần)
-        if (!state._lastLogStatusTime || Date.now() - state._lastLogStatusTime > 5000) {
-          state._lastLogStatusTime = Date.now();
-          log(`📥 ${receivedTopic} -> X: ${Math.round(data.x ?? 0)}mm, Y: ${Math.round(data.y ?? 0)}mm, Pen: ${data.pen ?? 'up'}`, 'STATUS');
-        }
-      } catch (_) {
-        log(`Status không hợp lệ: ${value}`, 'LỖI');
-      }
-    }
-  });
-
-  state.client.on('error', error => {
-    setConnection('Lỗi kết nối');
-    log(`❌ Broker: ${error.message}`, 'LỖI');
-  });
-
-  state.client.on('close', () => {
-    setConnection('Mất kết nối');
-    log('⚠ Đã ngắt kết nối với broker', '01·KẾT NỐI');
-  });
+  const config = { host: $('brokerHost').value.trim(), port: $('brokerPort').value, username: state.user, password: state.password };
+  try { localStorage.setItem('minicnc.connection', JSON.stringify({ host: config.host, port: config.port, username: config.username })); } catch (_) {}
+  await ensureTransport().connect(config);
+  state.client = state.transport.client;
 }
 
 /**
@@ -328,7 +299,7 @@ function handleResetWifi() {
   );
   if (!confirmed) return;
 
-  publish('control/wifi/reset', '1');
+  if (!publish('control/wifi/reset', '1')) return alert('Chưa gửi được yêu cầu đổi Wi-Fi. Kiểm tra ESP32 và quyền điều khiển.');
   log('⚠️ Đã gửi lệnh yêu cầu ESP32 chuyển sang chế độ phát WiFi cứu hộ KimPang...', '01·ĐIỀU KHIỂN');
   alert('Đã gửi lệnh thành công!\n\nESP32 đang khởi động lại vào chế độ phát WiFi:\n• Tên WiFi (SSID): KimPang\n• Mật khẩu: 88888888\n• Trang cài đặt: http://192.168.4.1');
 }
@@ -406,6 +377,17 @@ function renderStatus(data) {
   if ($('calLimitY')) $('calLimitY').textContent = `${Math.round(yMin)}..${Math.round(yMax)}`;
   if ($('calScaleX')) $('calScaleX').textContent = Number(data.scale?.x ?? 1).toFixed(3);
   if ($('calScaleY')) $('calScaleY').textContent = Number(data.scale?.y ?? 1).toFixed(3);
+  if (!state.calibrationInputError) {
+    if (data.calibrationError) {
+      showCalibrationMessage(data.calibrationError, true);
+    } else if (data.measuredCalibration === true) {
+      showCalibrationMessage('Đã lưu hiệu chuẩn và giới hạn hành trình trên máy.');
+    } else if (Number(data.calibrationVersion) >= 3) {
+      showCalibrationMessage('Đặt gốc, di chuyển đến giới hạn rồi bấm Đặt limit.');
+    } else {
+      showCalibrationMessage('Đặt gốc và chốt limit trước khi vẽ.');
+    }
+  }
 
   const calEl = $('calStatus');
   if (calEl) {
@@ -596,75 +578,14 @@ function updateJobProgress(job) {
 // ═════════════════════════════════════════════════════════════════════════════════════════
 
 /**
- * HỦY LỆNH VẼ TRIỆT ĐỂ (Cancel Job Guarantee):
- * Đảm bảo hủy hoàn toàn lệnh mà không cần nạp lại chip ESP32:
- * 1. Ngắt ngay lập tức mọi tiến trình gửi lệnh dở dang (isUploadingJob = false).
- * 2. Ngắt mô phỏng ảo nếu có.
- * 3. Gửi lệnh ngắt động cơ tức thì (control/stop).
- * 4. Gửi lệnh nhấc bút an toàn (control/pen/up).
- * 5. Xóa sạch bộ nhớ đệm lệnh vẽ trên ESP32 (auto/image/begin {"n":0} và auto/square/begin 0).
- * 6. Sau 40ms, tái gửi control/stop để xóa tan mọi xung đột race-condition.
- * 7. Cập nhật giao diện: badge 'ĐÃ HỦY', thông báo hủy rõ ràng, mở khóa lại nút gửi.
- * @param {string} source - Nguồn phát lệnh hủy
+ * Hủy các tác vụ gửi đang chờ và yêu cầu ESP32 dừng bằng giao thức hiện có.
+ * Chỉ phản hồi status trực tiếp mới được dùng để xác nhận dừng.
  */
-function handleCancelJob(source = '01·HỦY LỆNH') {
-  log('🛑 Đã bấm nút: HỦY LỆNH VẼ!', source);
-  state.isUploadingJob = false; // Hủy upload dở dang ngay lập tức
-
-  if (state.virtualJob) {
-    stopVirtualJob();
-  }
-
-  if (state.client?.connected) {
-    // 1. Dừng ngay tức thì động cơ nếu đang bước
-    publish('control/stop', '', source);
-
-    // 2. Nhấc bút lên góc nhấc an toàn ngay lập tức
-    const upAngle = Number($('penUp')?.value) || 110;
-    const downAngle = Number($('penDown')?.value) || 80;
-    publish('control/pen/up', String(upAngle), source);
-
-    // 3. Xóa sạch bộ nhớ lệnh trên ESP32: đưa số lệnh (n) về 0
-    publish('auto/image/begin', JSON.stringify({ n: 0, up: upAngle, down: downAngle }), source);
-    publish('auto/square/begin', '0', source);
-
-    // 4. Gửi xác nhận lại stop sau 40ms để xóa tan mọi race-condition
-    setTimeout(() => {
-      if (state.client?.connected) {
-        publish('control/stop', '', source);
-      }
-    }, 40);
-  }
-
-  // Cập nhật giao diện Web về trạng thái ĐÃ HỦY ngay lập tức
-  updateJobProgress({
-    s: 'stop',
-    i: 0,
-    n: 0,
-    k: '',
-    isVirtual: !isEspConnected()
-  });
-
-  const setBadgeCanceled = (badgeEl) => {
-    if (!badgeEl) return;
-    badgeEl.className = 'progress-badge job-badge-stopped';
-    badgeEl.textContent = 'ĐÃ HỦY';
-  };
-
-  setBadgeCanceled($('jobStateBadge'));
-  setBadgeCanceled($('imageJobBadge'));
-
-  if ($('jobMessage')) {
-    $('jobMessage').textContent = '🛑 Đã hủy lệnh vẽ. Động cơ đã dừng và đầu bút đã nhấc lên an toàn.';
-  }
-  if ($('imageJobMessage')) {
-    $('imageJobMessage').textContent = '🛑 Đã hủy lệnh vẽ. Đã giải phóng bộ nhớ lệnh và nhấc bút an toàn.';
-  }
-
-  // Mở khóa lại nút gửi ảnh nếu có đường vẽ sẵn sàng
-  if ($('sendImagePath') && state.imagePaths && state.imagePaths.length > 0) {
-    $('sendImagePath').disabled = false;
-  }
+function handleCancelJob(source = 'DỪNG MÁY') {
+  invalidateUpload();
+  if (state.simulation) { showStopState('Đã dừng mô phỏng · không phải máy thật'); return; }
+  ensureTransport().stop();
+  log('Yêu cầu dừng đã xử lý; chờ phản hồi ESP32.', source);
 }
 
 /**
@@ -881,24 +802,29 @@ function simulateVirtualControl(topicName, payload, steps) {
   } else if (topicName === 'control/cal/origin') {
     state.virtualX = 0;
     state.virtualY = 0;
-    state.virtualLimits = null;
+    state.virtualLimits = { xMin: 0, xMax: 230, yMin: 0, yMax: 850 };
+    state.status = { ...state.status, measuredCalibration: true, calibrated: true };
     if ($('jogCalDisplay')) {
       $('jogCalDisplay').textContent = 'Đã đặt gốc (0,0) (Ảo)';
       $('jogCalDisplay').style.color = '#00b894';
     }
     log('[ẢO] Đã đặt gốc tọa độ (0,0) - Vị trí hiện tại là 0,0 (ESP32 chưa kết nối)', '01·HIỆU CHUẨN');
   } else if (topicName === 'control/cal/set') {
+    const limX = Math.abs(state.virtualX) || 230;
+    const limY = Math.abs(state.virtualY) || 850;
     state.virtualLimits = {
-      xMin: state.virtualX < 0 ? state.virtualX : 0,
-      xMax: state.virtualX > 0 ? state.virtualX : 230,
-      yMin: state.virtualY < 0 ? state.virtualY : 0,
-      yMax: state.virtualY > 0 ? state.virtualY : 850
+      xMin: state.virtualX < 0 ? -limX : 0,
+      xMax: state.virtualX < 0 ? 0 : limX,
+      yMin: state.virtualY < 0 ? -limY : 0,
+      yMax: state.virtualY < 0 ? 0 : limY
     };
+    state.status = { ...state.status, calibrated: true, measuredCalibration: true, calibrationVersion: 3,
+      range: { x: [state.virtualLimits.xMin, state.virtualLimits.xMax], y: [state.virtualLimits.yMin, state.virtualLimits.yMax] } };
     if ($('jogCalDisplay')) {
-      $('jogCalDisplay').textContent = `Đã chốt limit: X[0..${state.virtualLimits.xMax}], Y[${state.virtualLimits.yMin}..${state.virtualLimits.yMax}] (Ảo)`;
+      $('jogCalDisplay').textContent = `Đã chốt limit: X[${state.virtualLimits.xMin}..${state.virtualLimits.xMax}], Y[${state.virtualLimits.yMin}..${state.virtualLimits.yMax}] (Ảo)`;
       $('jogCalDisplay').style.color = '#00b894';
     }
-    log(`[ẢO] Đã chốt giới hạn hành trình: X=[${state.virtualLimits.xMin}..${state.virtualLimits.xMax}], Y=[${state.virtualLimits.yMin}..${state.virtualLimits.yMax}]. Dù điều khiển tiếp máy cũng sẽ KHÔNG vượt qua biên này!`, '01·HIỆU CHUẨN');
+    log(`[ẢO] Đã chốt giới hạn hành trình: X=[${state.virtualLimits.xMin}..${state.virtualLimits.xMax}], Y=[${state.virtualLimits.yMin}..${state.virtualLimits.yMax}]`, '01·HIỆU CHUẨN');
   }
 
   if ($('jogPosDisplay')) $('jogPosDisplay').textContent = `X: ${Math.round(state.virtualX)} mm · Y: ${Math.round(state.virtualY)} mm (Ảo)`;
@@ -927,15 +853,35 @@ function simulateVirtualControl(topicName, payload, steps) {
  * Xử lý sự kiện bấm các nút điều khiển di chuyển Jog, Home, Đặt gốc và Chốt Limit
  * @param {HTMLElement} button - Phần tử nút bấm được click
  */
+function showCalibrationMessage(message, error = false, inputError = false) {
+  state.calibrationInputError = inputError;
+  const element = $('calibrationMessage');
+  if (element) {
+    element.textContent = message;
+    element.dataset.error = String(error);
+  }
+}
+
 function sendControl(button) {
+  if (!state.simulation && !isEspConnected() && button.dataset.topic !== 'control/stop') return log('Chờ ESP32 trực tuyến trước khi điều khiển.', 'LỖI');
   const steps = Math.max(1, Number($('steps').value) || 10);
-  const payload = button.dataset.payload ?? steps;
+  let payload = button.dataset.payload ?? steps;
   const topicName = button.dataset.topic;
 
   // Nút Dừng khẩn cấp / Hủy lệnh
   if (topicName === 'control/stop') {
     handleCancelJob('01·HỦY LỆNH');
     return;
+  }
+
+  if (topicName.startsWith('control/cal/')) {
+    if (['run', 'load'].includes(state.status?.job?.s)) {
+      showCalibrationMessage('Dừng bản vẽ trước khi hiệu chuẩn.', true, true);
+      return;
+    }
+    if (topicName === 'control/cal/set') {
+      payload = '';
+    }
   }
 
   // Phản hồi giao diện tức thì khi bấm Đặt gốc / Đặt limit
@@ -954,8 +900,8 @@ function sendControl(button) {
   // Gửi lệnh qua MQTT nếu đã kết nối Broker
   if (state.client?.connected) {
     publish(topicName, payload);
-  } else {
-    // Chỉ khi chưa kết nối Broker mới chạy mô phỏng di chuyển ảo
+  } else if (state.simulation) {
+    // Mô phỏng chỉ khi người dùng chủ động chọn
     simulateVirtualControl(topicName, payload, steps);
   }
 }
@@ -994,24 +940,48 @@ function addLine(job, x, y, pen) {
 }
 
 /**
- * Sinh tập lệnh vẽ các hình cơ bản (Hình vuông toàn bàn máy / Hình tròn elip)
+ * Tạo hình tròn theo giới hạn tọa độ mm, dùng cùng bán kính cho cả hai trục.
+ * Firmware tự đổi mm sang xung theo scale riêng; web không bù scale lần nữa.
+ */
+function getCircleGeometry() {
+  const range = state.status?.range || { x: [0, 230], y: [0, 850] };
+  const toFinite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const rawX0 = toFinite(range.x?.[0], 0);
+  const rawX1 = toFinite(range.x?.[1], 230);
+  const rawY0 = toFinite(range.y?.[0], 0);
+  const rawY1 = toFinite(range.y?.[1], 850);
+  const xMin = Math.min(rawX0, rawX1);
+  const xMax = Math.max(rawX0, rawX1);
+  const yMin = Math.min(rawY0, rawY1);
+  const yMax = Math.max(rawY0, rawY1);
+  const spanX = xMax - xMin;
+  const spanY = yMax - yMin;
+  const diameter = Math.min(spanX, spanY) * AUTO_CIRCLE_LIMIT_RATIO;
+  const radius = diameter / 2;
+
+  return {
+    cx: (xMin + xMax) / 2,
+    cy: (yMin + yMax) / 2,
+    spanX,
+    spanY,
+    rx: radius,
+    ry: radius,
+    diameter
+  };
+}
+
+/**
+ * Sinh tập lệnh vẽ các hình cơ bản (Hình vuông toàn bàn máy / Hình tròn)
  * @param {string} kind - Loại hình ('square' hoặc 'circle')
  * @returns {Array<string>}
  */
 function shapeOps(kind) {
   const range = state.status?.range || { x: [0, 230], y: [0, 850] };
-  const rawX0 = Number(range.x?.[0]) ?? 0;
-  const rawX1 = Number(range.x?.[1]) ?? 230;
-  const rawY0 = Number(range.y?.[0]) ?? 0;
-  const rawY1 = Number(range.y?.[1]) ?? 850;
-
-  const xMin = Math.min(rawX0, rawX1);
-  const xMax = Math.max(rawX0, rawX1);
-  const yMin = Math.min(rawY0, rawY1);
-  const yMax = Math.max(rawY0, rawY1);
-
-  const spanX = xMax - xMin;
-  const spanY = yMax - yMin;
+  const toFinite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const xMin = Math.min(toFinite(range.x?.[0], 0), toFinite(range.x?.[1], 230));
+  const xMax = Math.max(toFinite(range.x?.[0], 0), toFinite(range.x?.[1], 230));
+  const yMin = Math.min(toFinite(range.y?.[0], 0), toFinite(range.y?.[1], 850));
+  const yMax = Math.max(toFinite(range.y?.[0], 0), toFinite(range.y?.[1], 850));
 
   const ops = [];
 
@@ -1026,24 +996,14 @@ function shapeOps(kind) {
     ops.push(`${Math.round(xMin)},${Math.round(yMin)}`);
     ops.push('U');
   } else {
-    // Vẽ hình tròn hoàn hảo (tỷ lệ 1:1 theo cả hai trục X và Y, không bị méo elip)
-    const cx = (xMin + xMax) / 2;
-    const cy = (yMin + yMax) / 2;
-    const inputDia = Number($('circleDiameter')?.value);
-    const maxSafeDia = Math.min(spanX, spanY) * 0.9;
-    const diameter = (inputDia > 5 && inputDia <= maxSafeDia)
-      ? inputDia
-      : Math.min(spanX, spanY) * AUTO_CIRCLE_LIMIT_RATIO;
-    const r = diameter / 2;
-    const rx = r;
-    const ry = r; // Tuyệt đối cùng bán kính cho 2 trục để đảm bảo là hình tròn
+    // Cùng bán kính theo mm; firmware áp dụng hệ số xung/mm của từng trục.
+    const { cx, cy, rx, ry } = getCircleGeometry();
 
     ops.push('U');
     ops.push(`${Math.round(cx + rx)},${Math.round(cy)}`);
     ops.push('D');
-    const segments = 64;
-    for (let i = 1; i <= segments; i += 1) {
-      const angle = (i * Math.PI * 2) / segments;
+    for (let i = 1; i <= 64; i += 1) {
+      const angle = (i * Math.PI * 2) / 64;
       ops.push(`${Math.round(cx + rx * Math.cos(angle))},${Math.round(cy + ry * Math.sin(angle))}`);
     }
     ops.push('U');
@@ -1057,32 +1017,34 @@ function shapeOps(kind) {
  * @param {string} kind - Loại hình cần vẽ ('square' hoặc 'circle')
  */
 async function runShape(kind) {
+  if (!canStartJob()) return;
   const ops = shapeOps(kind);
   const up = Number($('penUp')?.value) || 110;
   const down = Number($('penDown')?.value) || 80;
+  const geometry = getCircleGeometry();
   const range = state.status?.range || { x: [0, 230], y: [0, 850] };
   const spanX = Math.abs((range.x?.[1] ?? 230) - (range.x?.[0] ?? 0));
   const spanY = Math.abs((range.y?.[1] ?? 850) - (range.y?.[0] ?? 0));
-  const inputDia = Number($('circleDiameter')?.value);
-  const maxSafeDia = Math.min(spanX, spanY) * 0.9;
-  const circleDiameter = Math.round((inputDia > 5 && inputDia <= maxSafeDia)
-    ? inputDia
-    : Math.min(spanX, spanY) * AUTO_CIRCLE_LIMIT_RATIO);
+  const circleDiameter = Math.round(geometry.diameter);
   const kindLabel = kind === 'square'
     ? `Khung limit 2 trục (${spanX}x${spanY}mm) ⬚`
-    : `Hình tròn Ø${circleDiameter}mm (chuẩn 1:1) ⏺`;
+    : `Hình tròn 80% trục ngắn (${circleDiameter}x${circleDiameter}mm) ○`;
 
+  const uploadGeneration = ++state.uploadGeneration;
   state.isUploadingJob = true;
+  if (state.transport) state.transport.uploading = true;
 
   // Nếu Web đã kết nối Broker: luôn nạp toàn bộ bản vẽ sang ESP32 thực tế
   if (state.client?.connected) {
-    publish(`auto/${kind}/begin`, JSON.stringify({ n: ops.length, up, down }), '02·VẼ HÌNH');
+    if (!publish(`auto/${kind}/begin`, JSON.stringify({ n: ops.length, up, down }), '02·VẼ HÌNH')) { invalidateUpload(); return; }
     await new Promise(resolve => setTimeout(resolve, 60));
-    if (!state.isUploadingJob) return;
-    publish(`auto/${kind}/data`, ops.join(';'), '02·VẼ HÌNH');
+    if (!state.isUploadingJob || uploadGeneration !== state.uploadGeneration) return;
+    if (!publish(`auto/${kind}/data`, ops.join(';'), '02·VẼ HÌNH')) { invalidateUpload(); return; }
     await new Promise(resolve => setTimeout(resolve, 80));
-    if (!state.isUploadingJob) return;
-    publish(`auto/${kind}/start`, '', '02·VẼ HÌNH');
+    if (!state.isUploadingJob || uploadGeneration !== state.uploadGeneration) return;
+    if (!publish(`auto/${kind}/start`, '', '02·VẼ HÌNH')) { invalidateUpload(); return; }
+    state.isUploadingJob = false;
+    if (state.transport) state.transport.uploading = false;
     log(`✅ Đã nạp toàn bộ bản vẽ ${kindLabel} sang ESP32. ESP32 bắt đầu tự động vẽ từ bộ nhớ!`, '02·VẼ HÌNH');
 
     // Cập nhật giao diện tiến độ thực tế cho ESP32
@@ -1098,6 +1060,7 @@ async function runShape(kind) {
     log(`Đã gửi ${ops.length} lệnh cho ${kindLabel} đến ESP32 thực tế.`, '02·VẼ HÌNH');
   } else {
     // Khi chưa kết nối MQTT Broker (offline demo), chạy mô phỏng ảo kèm nhãn [ẢO]
+    state.isUploadingJob = false;
     startVirtualJob(ops, kind, 'shape');
   }
 }
@@ -1404,23 +1367,19 @@ function processImageAndGeneratePaths() {
   const yMin = Number(range.y?.[0] ?? 0);
   const xSpan = Math.abs(Number(range.x?.[1] ?? 230) - xMin) || mW;
   const ySpan = Math.abs(Number(range.y?.[1] ?? 850) - yMin) || mH;
-  // Giữ tỉ lệ co giãn chuẩn 1:1 (Isotropic) để hình vẽ/ảnh giữ nguyên hình tròn, không bị kéo dãn thành elip
-  const uniformScale = Math.min(xSpan, ySpan) / V_SIZE;
-  const offsetX = xMin + (xSpan - V_SIZE * uniformScale) / 2;
-  const offsetY = yMin + (ySpan - V_SIZE * uniformScale) / 2;
   const cncOps = [];
   cncOps.push('U');
   let totalPts = 0;
 
   for (const p of paths) {
     if (p.length < 2) continue;
-    const startX = Math.round(offsetX + p[0].x * uniformScale);
-    const startY = Math.round(offsetY + p[0].y * uniformScale);
+    const startX = Math.round(xMin + (p[0].x / V_SIZE) * xSpan);
+    const startY = Math.round(yMin + (p[0].y / V_SIZE) * ySpan);
     cncOps.push(`${startX},${startY}`);
     cncOps.push('D');
     for (let i = 1; i < p.length; i++) {
-      const ptX = Math.round(offsetX + p[i].x * uniformScale);
-      const ptY = Math.round(offsetY + p[i].y * uniformScale);
+      const ptX = Math.round(xMin + (p[i].x / V_SIZE) * xSpan);
+      const ptY = Math.round(yMin + (p[i].y / V_SIZE) * ySpan);
       cncOps.push(`${ptX},${ptY}`);
       totalPts++;
     }
@@ -1464,8 +1423,9 @@ function processImageAndGeneratePaths() {
 }
 
 /**
- * Trích xuất đường viền liên tục dày 1-pixel từ ảnh nhị phân (Topological Boundary Tracing)
- * Đảm bảo viền sắc nét, không bị vòng lặp vụn
+ * Trích xuất đường viền từ ảnh nhị phân bằng marching squares.
+ * Mỗi chuyển tiếp sáng/tối tạo một đoạn biên rồi được nối thành polyline.
+ * Cách này không đi xuyên qua nhánh theo thứ tự láng giềng tùy ý như bộ dò cũ.
  * @param {Uint8Array} bin - Mảng nhị phân (1: nét, 0: nền)
  * @param {number} width - Chiều rộng ảnh
  * @param {number} height - Chiều cao ảnh
@@ -1473,76 +1433,112 @@ function processImageAndGeneratePaths() {
  * @returns {Array<Array<{x: number, y: number}>>}
  */
 function traceBinaryContours(bin, width, height, minLength = 8) {
-  // Bước 1: Trích xuất mặt nạ biên 1-pixel
-  const bdry = new Uint8Array(width * height);
-  for (let y = 0; y < height; y++) {
-    const row = y * width;
-    for (let x = 0; x < width; x++) {
-      if (bin[row + x] === 1) {
-        if (
-          x === 0 || x === width - 1 || y === 0 || y === height - 1 ||
-          bin[row + x - 1] === 0 || bin[row + x + 1] === 0 ||
-          bin[row - width + x] === 0 || bin[row + width + x] === 0
-        ) {
-          bdry[row + x] = 1;
-        }
+  // Mỗi nút là trung điểm của một cạnh ô ảnh, tọa độ được nhân đôi
+  // để lưu chính xác bằng số nguyên và tránh lỗi so sánh số thực.
+  const pointForEdge = (x, y, edge) => {
+    switch (edge) {
+      case 0: return [2 * x + 1, 2 * y];       // trên
+      case 1: return [2 * x + 2, 2 * y + 1];   // phải
+      case 2: return [2 * x + 1, 2 * y + 2];   // dưới
+      default: return [2 * x, 2 * y + 1];     // trái
+    }
+  };
+  const keyOf = (x, y) => `${x},${y}`;
+  const pointOf = key => {
+    const [x, y] = key.split(',').map(Number);
+    return { x: x / 2, y: y / 2 };
+  };
+  const graph = new Map();
+  const addEdge = (a, b) => {
+    const ka = keyOf(a[0], a[1]);
+    const kb = keyOf(b[0], b[1]);
+    if (!graph.has(ka)) graph.set(ka, new Set());
+    if (!graph.has(kb)) graph.set(kb, new Set());
+    graph.get(ka).add(kb);
+    graph.get(kb).add(ka);
+  };
+
+  // Bảng chuyển tiếp của marching squares. Hai trường hợp chéo (5, 10)
+  // được tách thành hai đoạn để không nối nhầm hai vùng khác nhau.
+  const transitions = [
+    [], [[3, 0]], [[0, 1]], [[3, 1]], [[1, 2]],
+    [[3, 2], [0, 1]], [[0, 2]], [[3, 2]], [[2, 3]],
+    [[0, 2]], [[0, 1], [2, 3]], [[1, 2]], [[1, 3]],
+    [[0, 1]], [[3, 0]], []
+  ];
+
+  for (let y = 0; y < height - 1; y++) {
+    for (let x = 0; x < width - 1; x++) {
+      const row = y * width;
+      const mask =
+        (bin[row + x] ? 1 : 0) |
+        (bin[row + x + 1] ? 2 : 0) |
+        (bin[row + width + x + 1] ? 4 : 0) |
+        (bin[row + width + x] ? 8 : 0);
+      for (const [from, to] of transitions[mask]) {
+        addEdge(pointForEdge(x, y, from), pointForEdge(x, y, to));
       }
     }
   }
 
-  // Bước 2: Dò tìm và xâu chuỗi các đường viền liên tục theo 8 hướng
-  const visited = new Uint8Array(width * height);
+  const visitedEdges = new Set();
+  const edgeKey = (a, b) => a < b ? `${a}|${b}` : `${b}|${a}`;
   const contours = [];
+  const chooseNext = (previous, current, candidates) => {
+    if (candidates.length <= 1) return candidates[0];
+    const prev = pointOf(previous);
+    const cur = pointOf(current);
+    const inAngle = Math.atan2(cur.y - prev.y, cur.x - prev.x);
+    return candidates.slice().sort((a, b) => {
+      const pa = pointOf(a), pb = pointOf(b);
+      const aa = Math.abs(Math.atan2(
+        Math.sin(Math.atan2(pa.y - cur.y, pa.x - cur.x) - inAngle),
+        Math.cos(Math.atan2(pa.y - cur.y, pa.x - cur.x) - inAngle)
+      ));
+      const ab = Math.abs(Math.atan2(
+        Math.sin(Math.atan2(pb.y - cur.y, pb.x - cur.x) - inAngle),
+        Math.cos(Math.atan2(pb.y - cur.y, pb.x - cur.x) - inAngle)
+      ));
+      return aa - ab;
+    })[0];
+  };
 
-  const DX = [1, 1, 0, -1, -1, -1, 0, 1];
-  const DY = [0, 1, 1, 1, 0, -1, -1, -1];
+  const walk = (start, first) => {
+    const points = [pointOf(start), pointOf(first)];
+    let previous = start;
+    let current = first;
+    visitedEdges.add(edgeKey(previous, current));
+    const maxEdges = graph.size * 2 + 4;
 
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const startIdx = y * width + x;
-      if (bdry[startIdx] !== 1 || visited[startIdx]) continue;
+    for (let i = 0; i < maxEdges; i++) {
+      const candidates = [...(graph.get(current) || [])]
+        .filter(next => !visitedEdges.has(edgeKey(current, next)));
+      if (candidates.length === 0) break;
+      const next = chooseNext(previous, current, candidates);
+      visitedEdges.add(edgeKey(current, next));
+      points.push(pointOf(next));
+      previous = current;
+      current = next;
+      if (current === start) break;
+    }
+    return points;
+  };
 
-      const contour = [{ x, y }];
-      visited[startIdx] = 1;
-      let cx = x, cy = y;
-      let steps = 0;
-      const maxSteps = width * height;
-
-      while (steps < maxSteps) {
-        let foundNext = false;
-        let bestNx = -1, bestNy = -1;
-
-        for (let d = 0; d < 8; d++) {
-          const nx = cx + DX[d];
-          const ny = cy + DY[d];
-          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-            const nIdx = ny * width + nx;
-            if (bdry[nIdx] === 1 && !visited[nIdx]) {
-              bestNx = nx;
-              bestNy = ny;
-              foundNext = true;
-              break;
-            }
-          }
-        }
-
-        if (foundNext) {
-          visited[bestNy * width + bestNx] = 1;
-          contour.push({ x: bestNx, y: bestNy });
-          cx = bestNx;
-          cy = bestNy;
-          steps++;
-        } else {
-          // Khép kín chu trình nếu điểm kết thúc gần điểm bắt đầu
-          if (contour.length > 3 && Math.hypot(cx - x, cy - y) <= 3) {
-            contour.push({ x, y });
-          }
-          break;
-        }
+  // Ưu tiên bắt đầu ở đầu mút. Các vòng kín còn lại được xử lý ở lượt hai.
+  for (const [start, neighbours] of graph) {
+    if (neighbours.size === 2) continue;
+    for (const first of neighbours) {
+      if (!visitedEdges.has(edgeKey(start, first))) {
+        const contour = walk(start, first);
+        if (contour.length >= minLength) contours.push(contour);
       }
-
-      if (contour.length >= minLength) {
-        contours.push(contour);
+    }
+  }
+  for (const [start, neighbours] of graph) {
+    for (const first of neighbours) {
+      if (!visitedEdges.has(edgeKey(start, first))) {
+        const contour = walk(start, first);
+        if (contour.length >= minLength) contours.push(contour);
       }
     }
   }
@@ -1755,7 +1751,9 @@ function optimizePathOrder(paths) {
  */
 function handleImageFile(file) {
   if (!file) return;
+  if (!/^image\//.test(file.type) || file.size > 15 * 1024 * 1024) return alert('Chọn ảnh hợp lệ, tối đa 15 MB.');
   const reader = new FileReader();
+  reader.onerror = () => alert('Không đọc được tệp ảnh.');
   reader.onload = (e) => {
     const img = new Image();
     img.onload = () => {
@@ -1786,6 +1784,7 @@ function handleImageFile(file) {
       processImageAndGeneratePaths();
       log(`Đã nạp ảnh "${file.name}" (${img.width}×${img.height}px) vào khung vuông.`, '03·VẼ ẢNH');
     };
+    img.onerror = () => alert('Định dạng ảnh không đọc được. Hãy chọn PNG hoặc JPEG.');
     img.src = e.target.result;
   };
   reader.readAsDataURL(file);
@@ -1795,6 +1794,7 @@ function handleImageFile(file) {
  * Gửi toàn bộ danh sách lệnh vẽ từ ảnh tới ESP32 qua giao thức MQTT
  */
 async function sendImageToESP() {
+  if (!canStartJob()) return;
   const ops = state.imagePaths;
   if (!ops || ops.length < 3) return log('Chưa có đường vẽ. Hãy chọn ảnh trước.', '03·VẼ ẢNH');
 
@@ -1809,31 +1809,33 @@ async function sendImageToESP() {
     ? (imgWs.outlineStyle === 'canny' ? 'viền Canny' : 'viền khối')
     : `tô màu (${imgWs.hatchSpacing}mm)`;
 
+  const uploadGeneration = ++state.uploadGeneration;
   state.isUploadingJob = true;
+  if (state.transport) state.transport.uploading = true;
 
   if (state.client?.connected) {
     log(`Đang nạp toàn bộ bản vẽ (${ops.length} lệnh) sang ESP32...`, '03·VẼ ẢNH');
-    publish('auto/image/begin', JSON.stringify({ n: ops.length, up, down }), '03·VẼ ẢNH');
+    if (!publish('auto/image/begin', JSON.stringify({ n: ops.length, up, down }), '03·VẼ ẢNH')) { invalidateUpload(); return; }
     await new Promise(resolve => setTimeout(resolve, 80));
 
-    // Với bộ đệm MQTT 32KB trên ESP32, nạp toàn bộ bản vẽ:
-    // Nếu dưới 2500 lệnh: gửi trọn vẹn trong 1 gói duy nhất!
-    // Nếu lớn hơn 2500 lệnh: chia khối lớn 2000 lệnh/gói
+    // Chia 200 lệnh mỗi gói để phù hợp bộ đệm MQTT của firmware.
     const CHUNK_SIZE = 200;
     for (let i = 0; i < ops.length; i += CHUNK_SIZE) {
-      if (!state.isUploadingJob) {
+      if (!state.isUploadingJob || uploadGeneration !== state.uploadGeneration) {
         log('🛑 Đã hủy quá trình gửi lệnh do bấm Dừng máy.', '03·VẼ ẢNH');
         return;
       }
       const chunk = ops.slice(i, i + CHUNK_SIZE).join(';');
-      publish('auto/image/data', chunk, '03·VẼ ẢNH');
+      if (!publish('auto/image/data', chunk, '03·VẼ ẢNH')) { invalidateUpload(); return; }
       if (i + CHUNK_SIZE < ops.length) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
     await new Promise(resolve => setTimeout(resolve, 120));
-    if (!state.isUploadingJob) return;
-    publish('auto/image/start', '', '03·VẼ ẢNH');
+    if (!state.isUploadingJob || uploadGeneration !== state.uploadGeneration) return;
+    if (!publish('auto/image/start', '', '03·VẼ ẢNH')) { invalidateUpload(); return; }
+    state.isUploadingJob = false;
+    if (state.transport) state.transport.uploading = false;
     log(`✅ Đã nạp xong toàn bộ ${ops.length} lệnh sang ESP32. ESP32 bắt đầu tự động vẽ từ bộ nhớ!`, '03·VẼ ẢNH');
 
     // Cập nhật giao diện tiến độ thực tế cho ESP32
@@ -1848,6 +1850,7 @@ async function sendImageToESP() {
     log(`Đã nạp toàn bộ ${ops.length} lệnh vẽ từ ảnh [${modeLabel}] đến ESP32 thực tế.`, '03·VẼ ẢNH');
   } else {
     // Khi chưa kết nối MQTT Broker (offline demo), chạy mô phỏng ảo
+    state.isUploadingJob = false;
     startVirtualJob(ops, 'image', 'image');
   }
 }
@@ -2693,8 +2696,10 @@ document.querySelectorAll('[data-topic]').forEach(button => {
 // 2. Kết nối / Ngắt kết nối MQTT
 $('connectForm')?.addEventListener('submit', connect);
 $('disconnect')?.addEventListener('click', () => {
-  state.client?.end(true);
+  state.transport?.disconnect();
   state.client = null;
+  state.password = '';
+  if ($('password')) $('password').value = '';
   setConnection('Chưa kết nối');
   log('Đã ngắt kết nối.');
 });
@@ -2712,6 +2717,7 @@ document.querySelectorAll('.step-pill').forEach(pill => {
 
 // 4. Bật/Tắt Nhấc & Hạ bút vẽ (gửi ngay góc được chỉ định trong ô nhập)
 $('togglePen')?.addEventListener('click', () => {
+  if (!state.simulation && !isEspConnected()) return;
   state.penDown = !state.penDown;
   const upAngle = Number($('penUp')?.value) || 110;
   const downAngle = Number($('penDown')?.value) || 80;
@@ -2758,6 +2764,7 @@ if (savedPenDown && $('penDown')) $('penDown').value = savedPenDown;
 
 // 5. Bật/Tắt Đèn chiếu sáng LED
 $('toggleLed')?.addEventListener('click', () => {
+  if (!state.simulation && !isEspConnected()) return;
   state.ledOn = !state.ledOn;
   if (state.client?.connected) {
     publish('control/led', state.ledOn ? '1' : '0');
@@ -2877,7 +2884,7 @@ if ($('contrastSlider')) {
 
 if ($('threshold')) {
   $('threshold').addEventListener('input', e => {
-    imgWs.threshold = Number(e.target.value) || 128;
+    imgWs.threshold = Number(e.target.value) || 50;
     const pct = Math.round((imgWs.threshold / 255) * 100);
     if ($('threshOut')) $('threshOut').textContent = `${pct}%`;
     updateBwCanvas();
@@ -3202,6 +3209,10 @@ if (wsCanvas) {
   }, { passive: false });
 
   wsCanvas.addEventListener('touchend', () => {
+    pinchStartDist = 0;
+    endInteraction();
+  });
+  wsCanvas.addEventListener('touchcancel', () => {
     pinchStartDist = 0;
     endInteraction();
   });

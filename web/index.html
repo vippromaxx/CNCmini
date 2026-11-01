@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="app-ui.css">
 </head>
 <body>
   <main class="app-shell" id="top">
@@ -150,13 +151,13 @@
               <div class="speed-select-row" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                   <label for="speedSlider" style="font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--purple);">Tốc độ động cơ</label>
-                  <span id="speedValue" style="font-weight: 800; font-size: 13px; color: var(--ink);">400 bước/s</span>
+                  <span id="speedValue" style="font-weight: 800; font-size: 13px; color: var(--ink);">300 bước/s</span>
                 </div>
-                <input id="speedSlider" type="range" min="100" max="1500" step="50" value="400" style="width: 100%; accent-color: var(--purple); cursor: pointer;">
+                <input id="speedSlider" type="range" min="100" max="800" step="50" value="300" style="width: 100%; accent-color: var(--purple); cursor: pointer;">
                 <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 3px;">
                   <span>100 (Êm ru)</span>
-                  <span>400 (Vừa)</span>
-                  <span>1500 (Nhanh)</span>
+                  <span>300 (Vừa)</span>
+                  <span>800 (Tối đa an toàn)</span>
                 </div>
               </div>
             </div>
@@ -170,6 +171,7 @@
                 <button type="button" class="ctrl-btn" data-topic="control/cal/set" data-payload="">📏 Đặt limit</button>
                 <button id="quickResetWifiBtn" type="button" class="ctrl-btn ctrl-btn-wifi" title="Cấu hình lại WiFi cho ESP32">📶 Đổi WiFi</button>
               </div>
+
 
               <div class="pen-angle-row">
                 <label>Góc nhấc bút<input id="penUp" type="number" min="0" max="180" value="110"></label>
@@ -273,12 +275,7 @@
         <div class="drawing-copy"><h3>Gửi một hình đơn giản</h3><p class="muted">ESP32 sẽ nhận đường chạy, di chuyển đến từng điểm và tự nâng/hạ bút.</p></div>
         <div class="drawing-actions">
           <button id="square" type="button" class="button" title="Vẽ bao quanh toàn bộ hành trình limit 2 trục (X: 0..230mm, Y: 0..850mm)">Vẽ khung máy (Hết 2 trục) ⬚</button>
-          <button id="circle" type="button" class="button button-purple" title="Vẽ hình tròn hoàn hảo (tỷ lệ 1:1, chuẩn đường kính, không méo elip)">Vẽ hình tròn ⏺</button>
-          <div class="circle-input-wrap" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;">
-            <label for="circleDiameter">Đường kính:</label>
-            <input id="circleDiameter" type="number" min="10" max="800" value="80" style="width:65px;padding:6px 8px;border-radius:6px;border:1px solid #ccc;font-weight:700;text-align:center;">
-            <span>mm</span>
-          </div>
+          <button id="circle" type="button" class="button button-purple" title="Vẽ hình tròn thật, đường kính 80% trục ngắn">Vẽ hình tròn ○</button>
           <button id="cancelShapeJobBtn" type="button" class="button-danger" data-topic="control/stop" data-payload="" title="Hủy toàn bộ lệnh vẽ đang chạy hoặc đang gửi">🛑 Hủy lệnh vẽ</button>
         </div>
 
@@ -345,12 +342,12 @@
               <span class="ctrl-name" style="font-size: 13px; font-weight: 800; color: #2d3436; display: flex; align-items: center; gap: 6px;">
                 🌓 Độ đậm nhạt Trắng - Đen (Kéo để chỉnh nét vẽ)
               </span>
-              <span class="ctrl-val" id="threshOut" style="font-size: 15px; font-weight: 900; color: #6c5ce7;">50%</span>
+              <span class="ctrl-val" id="threshOut" style="font-size: 15px; font-weight: 900; color: #6c5ce7;">20%</span>
             </div>
-            <input id="threshold" type="range" min="15" max="240" value="128" style="width: 100%; cursor: pointer;">
+            <input id="threshold" type="range" min="15" max="240" value="50" style="width: 100%; cursor: pointer;">
             <div style="display: flex; justify-content: space-between; font-size: 11px; color: #888; margin-top: 5px; font-weight: 600;">
               <span>⚪ Sáng hơn (Ít nét đen)</span>
-              <span>Mặc định (50%)</span>
+              <span>Mặc định (20%)</span>
               <span>⚫ Đậm hơn (Nhiều nét đen)</span>
             </div>
           </label>
@@ -463,6 +460,8 @@
   <script>if (!window.echarts) document.write('<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"><\/script>');</script>
   <script src="mqtt.min.js"></script>
   <script>if (!window.mqtt) document.write('<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"><\/script>');</script>
-  <script src="script.js?v=circle_fix_2"></script>
+  <script src="connection.js"></script>
+  <script src="script.js?v=android_1"></script>
+  <script src="app-ui.js"></script>
 </body>
 </html>

@@ -1,0 +1,50 @@
+/* Shared accessibility and mobile adaptations. Desktop retains the full dashboard. */
+[hidden] { display: none !important; }
+.connection-help { grid-column: 1 / -1; }
+.app-options { margin-top: 16px; line-height: 1.6; }
+.simulation-option { display: flex; gap: 12px; align-items: center; min-height: 48px; }
+.simulation-option input { width: 24px; height: 24px; }
+.app-navigation { display: none; }
+.app-stop-bar { position: fixed; z-index: 99; right: 16px; bottom: 16px; display: flex; gap: 12px; align-items: center; max-width: calc(100% - 32px); padding: 8px 12px; background: #fff; color: #1a1a2e; border: 2px solid #1a1a2e; border-radius: 16px; box-shadow: 0 4px 0 #1a1a2e; }
+.app-stop-bar span { font-size: 13px; overflow-wrap: anywhere; }
+.app-stop-bar button { flex-shrink: 0; background: #b32325; color: #fff; border: none; border-radius: 10px; min-height: 48px; padding: 8px 20px; font-weight: 900; }
+body { padding-bottom: 96px; }
+button, input, select, .button { touch-action: manipulation; }
+:focus-visible { outline: 3px solid #4834d4; outline-offset: 3px; }
+.simulation-mode .connection { background: #fff0c2; color: #653c00; }
+.mobile-layout { padding-bottom: calc(164px + env(safe-area-inset-bottom, 0px)); }
+.mobile-layout .app-shell { width: 100%; max-width: 100%; padding: 16px; overflow-x: clip; }
+.mobile-layout .welcome, .mobile-layout .marquee-strip, .mobile-layout .footer { display: none; }
+.mobile-layout .topbar { margin-bottom: 16px; padding: 8px 0; gap: 8px; flex-wrap: wrap; }
+.mobile-layout .brand small { display: none; }
+.mobile-layout .topbar-right { gap: 8px; flex-wrap: wrap; }
+.mobile-layout .machine-tag { display: none; }
+.mobile-layout .connection { white-space: normal; font-size: 12px; }
+.mobile-layout .app-page { margin-top: 0; }
+.mobile-layout .section { padding-top: 16px; animation: none; opacity: 1; transform: none; }
+.native-app { scroll-behavior: auto; }
+.mobile-layout .app-page:not(.is-active) { display: none; }
+.mobile-layout .section-heading { margin-bottom: 16px; }
+.mobile-layout .section-heading h2 { font-size: 26px; }
+.mobile-layout .section-number { display: none; }
+.mobile-layout .panel { padding: 16px; min-width: 0; }
+.mobile-layout .control-grid, .mobile-layout .charts-dual-grid, .mobile-layout .image-draw-grid { grid-template-columns: minmax(0, 1fr); }
+.mobile-layout .jog-content { display: flex; flex-wrap: wrap; gap: 16px; }
+.mobile-layout .jog-dpad-col, .mobile-layout .jog-actions-col { flex: 1 1 260px; min-width: 0; }
+.mobile-layout .gauges-quad-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mobile-layout .auth-form { display: grid; grid-template-columns: 1fr; }
+.mobile-layout button, .mobile-layout .button, .mobile-layout input:not([type=checkbox]):not([type=hidden]), .mobile-layout select { min-height: 48px; min-width: 48px; }
+.mobile-layout input, .mobile-layout select { font-size: 16px; }
+.mobile-layout .step-pills, .mobile-layout .quick-controls { gap: 8px; }
+.mobile-layout .app-navigation { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; background: #f5f5f0; border-top: 2px solid #1a1a2e; padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px)); }
+.mobile-layout .app-navigation button { border: none; border-radius: 10px; background: transparent; color: #34344b; font: 700 12px/1.25 Inter, sans-serif; padding: 8px 2px; min-height: 52px; overflow-wrap: anywhere; }
+.mobile-layout .app-navigation button[aria-current=page] { background: #a8ff53; color: #1a1a2e; }
+.mobile-layout .app-stop-bar { left: 8px; right: 8px; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); max-width: none; justify-content: space-between; box-shadow: none; }
+.mobile-layout #stopState { flex: 1; font-size: 12px; }
+.mobile-layout .terminal-body { overflow-wrap: anywhere; white-space: pre-wrap; }
+.mobile-layout canvas { max-width: 100%; }
+.mobile-layout #workspaceCanvas { touch-action: none; }
+.mobile-layout .section, .mobile-layout article, .mobile-layout .log-panel { min-width: 0; }
+.mobile-layout .auth-meta { flex-wrap: wrap; }
+@media (max-width: 760px) { html { scroll-behavior: auto; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

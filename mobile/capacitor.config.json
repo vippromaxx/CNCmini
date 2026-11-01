@@ -1,0 +1,8 @@
+{
+  "appId": "vn.minicnc.controller",
+  "appName": "MiniCNC",
+  "webDir": "www",
+  "server": { "androidScheme": "http", "cleartext": true },
+  "android": { "allowMixedContent": false, "webContentsDebuggingEnabled": false },
+  "plugins": { "SystemBars": { "insetsHandling": "native", "style": "LIGHT" } }
+}

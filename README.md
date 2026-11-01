@@ -1,5 +1,9 @@
 # MiniCNC - phần ngoài PlatformIO
 
+## App Android
+
+App MiniCNC nhúng giao diện web, kết nối broker qua Wi-Fi/LAN. Mã nguồn, hướng dẫn build APK và cài đặt: [mobile/README.md](mobile/README.md). Kết quả kiểm chứng: [mobile/VALIDATION.md](mobile/VALIDATION.md).
+
 Thư mục này chứa các thành phần web, broker, database, tài liệu và dữ liệu khôi phục. Mã firmware PlatformIO được giữ riêng tại:
 
 `C:\Users\ThinkPad\Documents\PlatformIO\Projects\CNC`
