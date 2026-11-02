@@ -188,52 +188,56 @@
         <!-- HÀNG 1: 4 ĐỒNG HỒ GAUGE (2 ĐỘNG CƠ X/Y + 2 DHT11) -->
         <div class="gauges-quad-grid">
           <!-- Gauge 1: Động cơ Trục X -->
-          <div class="gauge-card">
+          <div class="gauge-card gauge-card-x">
             <div class="gauge-header">
               <span class="motor-icon motor-x-icon">X</span>
               <div>
                 <span class="gauge-label">ĐỘNG CƠ TRỤC X</span>
-                <small id="motorXNote" class="gauge-note">0 mm · Giới hạn: 0..230</small>
+                <small id="motorXNote" class="gauge-note">Chờ dữ liệu vị trí</small>
               </div>
             </div>
             <div id="motorXGaugeContainer" class="gauge-canvas" aria-label="Đồng hồ đo vị trí động cơ X"></div>
+            <div class="gauge-footer"><span>KIM CHỈ THỊ</span><span data-gauge-range></span></div>
           </div>
 
           <!-- Gauge 2: Động cơ Trục Y -->
-          <div class="gauge-card">
+          <div class="gauge-card gauge-card-y">
             <div class="gauge-header">
               <span class="motor-icon motor-y-icon">Y</span>
               <div>
                 <span class="gauge-label">ĐỘNG CƠ TRỤC Y</span>
-                <small id="motorYNote" class="gauge-note">0 mm · Giới hạn: 0..850</small>
+                <small id="motorYNote" class="gauge-note">Chờ dữ liệu vị trí</small>
               </div>
             </div>
             <div id="motorYGaugeContainer" class="gauge-canvas" aria-label="Đồng hồ đo vị trí động cơ Y"></div>
+            <div class="gauge-footer"><span>VÒNG CHIA ĐOẠN</span><span data-gauge-range></span></div>
           </div>
 
           <!-- Gauge 3: Nhiệt độ DHT11 -->
-          <div class="gauge-card">
+          <div class="gauge-card gauge-card-temperature">
             <div class="gauge-header">
-              <span class="temperature-icon">℃</span>
+              <span class="temperature-icon" aria-hidden="true">℃</span>
               <div>
                 <span class="gauge-label">NHIỆT ĐỘ DHT11</span>
                 <small id="temperatureNote" class="gauge-note">Chờ dữ liệu DHT11</small>
               </div>
             </div>
             <div id="tempGaugeContainer" class="gauge-canvas" aria-label="Đồng hồ đo nhiệt độ DHT11"></div>
+            <div class="gauge-footer"><span>NHIỆT KẾ DẠNG CỘT</span><span data-gauge-range></span></div>
             <span id="temperatureValue" style="display: none;">-- °C</span>
           </div>
 
           <!-- Gauge 4: Độ ẩm DHT11 -->
-          <div class="gauge-card">
+          <div class="gauge-card gauge-card-humidity">
             <div class="gauge-header">
-              <span class="humidity-icon">♒</span>
+              <span class="humidity-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3C10 7 5 11 5 15a7 7 0 0 0 14 0c0-4-5-8-7-12Z"/><path d="M9 15a3 3 0 0 0 3 3"/></svg></span>
               <div>
                 <span class="gauge-label">ĐỘ ẨM DHT11</span>
                 <small id="humidityNote" class="gauge-note">Chờ dữ liệu DHT11</small>
               </div>
             </div>
             <div id="humGaugeContainer" class="gauge-canvas" aria-label="Đồng hồ đo độ ẩm DHT11"></div>
+            <div class="gauge-footer"><span>THANG ĐỘ ẨM</span><span data-gauge-range></span></div>
             <span id="humidityValue" style="display: none;">-- %</span>
           </div>
         </div>
@@ -254,16 +258,17 @@
           </div>
 
           <!-- Đồ thị 2: Đồ thị Nhiệt độ & Độ ẩm DHT11 theo thời gian -->
-          <div class="chart-card">
+          <div class="chart-card dht-chart-card">
             <div class="chart-heading">
-              <b>Đồ thị Nhiệt độ & Độ ẩm DHT11</b>
-              <span>Đứng yên cố định · °C / %</span>
+              <b>Diễn biến môi trường</b>
+              <span>24 mẫu gần nhất</span>
             </div>
-            <div id="dhtChartContainer" class="trend-chart-canvas" aria-label="Đồ thị nhiệt độ và độ ẩm DHT11"></div>
             <div class="chart-legend">
               <span><i class="legend-temp"></i>Nhiệt độ <b id="dhtChartTempValue">-- °C</b></span>
               <span><i class="legend-hum"></i>Độ ẩm <b id="dhtChartHumValue">-- %</b></span>
             </div>
+            <div id="dhtChartContainer" class="trend-chart-canvas" role="img" aria-label="Đồ thị nhiệt độ và độ ẩm DHT11: chưa có dữ liệu"></div>
+            <p id="dhtTrendStatus" class="dht-chart-status">Chờ dữ liệu từ cảm biến DHT11</p>
           </div>
         </div>
       </article>
@@ -351,6 +356,16 @@
               <span>⚫ Đậm hơn (Nhiều nét đen)</span>
             </div>
           </label>
+
+          <div id="hatchSpacingCtrl" class="img-ctrl hatch-spacing-control" hidden>
+            <div class="ctrl-header-row">
+              <label for="hatchSpacing" class="ctrl-name">Khoảng cách giữa hai nét</label>
+              <output id="hatchSpacingOut" class="ctrl-val" for="hatchSpacing">3 mm</output>
+            </div>
+            <input id="hatchSpacing" type="range" min="1" max="20" step="1" value="3" aria-valuetext="3 mm" aria-describedby="hatchSpacingHelp">
+            <div class="hatch-spacing-scale" aria-hidden="true"><span>1 mm · Dày</span><span>20 mm · Thưa</span></div>
+            <p id="hatchSpacingHelp">Khoảng cách nhỏ cho nét tô dày hơn. Đường vẽ xem trước tự cập nhật khi thay đổi.</p>
+          </div>
 
           <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between;">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 700; color: #2d3436; user-select: none;">
@@ -461,7 +476,8 @@
   <script src="mqtt.min.js"></script>
   <script>if (!window.mqtt) document.write('<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"><\/script>');</script>
   <script src="connection.js"></script>
-  <script src="script.js?v=android_1"></script>
+  <script src="telemetry-gauges.js"></script>
+  <script src="script.js?v=gauges_2"></script>
   <script src="app-ui.js"></script>
 </body>
 </html>

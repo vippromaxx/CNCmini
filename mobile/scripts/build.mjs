@@ -8,7 +8,7 @@ const web = path.resolve(root, '../web');
 const out = path.join(root, 'www');
 await mkdir(out, { recursive: true });
 // Explicit allowlist prevents broker credentials and recovery artifacts entering the APK.
-for (const file of ['index.html', 'style.css', 'script.js', 'connection.js', 'app-ui.js', 'app-ui.css', 'mqtt.min.js', 'echarts.min.js']) {
+for (const file of ['index.html', 'style.css', 'script.js', 'telemetry-gauges.js', 'connection.js', 'app-ui.js', 'app-ui.css', 'mqtt.min.js', 'echarts.min.js']) {
   await cp(path.join(web, file), path.join(out, file));
 }
 let html = await readFile(path.join(out, 'index.html'), 'utf8');

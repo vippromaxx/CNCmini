@@ -6,7 +6,7 @@ const { test } = require('node:test');
 const vm = require('node:vm');
 const source = readFileSync(join(__dirname, '../web/script.js'), 'utf8');
 const names = ['showCalibrationMessage', 'sendControl',
-  'getCircleGeometry', 'shapeOps', 'runShape'];
+  'getCircleGeometry', 'shapeOps', 'uploadJob', 'runShape'];
 const code = names.map(name => {
   const match = source.match(new RegExp(`^(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?^\\}`, 'm'));
   assert.ok(match, name);
@@ -24,7 +24,18 @@ function setup(status = { calibrationVersion: 3, measuredCalibration: false, job
     state: { client: { connected: true }, status, uploadGeneration: 0 },
     isEspConnected: () => true, canStartJob: () => true,
     invalidateUpload() { throw new Error('Unexpected upload cancellation'); },
-    $: id => nodes.get(id), publish: (topic, payload) => { sent.push({ topic, payload }); return true; },
+    $: id => nodes.get(id), publish: (topic, payload) => {
+      sent.push({ topic, payload });
+      const [, kind, action] = topic.split('/');
+      if (topic.startsWith('auto/')) {
+        const old = context.state.status;
+        const job = action === 'begin' ? { k: kind, s: 'load', n: 0 }
+          : { ...old.job, ...(action === 'data'
+            ? { n: old.job.n + payload.split(';').length } : { s: 'run' }) };
+        context.state.status = { ...old, job };
+      }
+      return true;
+    },
     log() {}, setTimeout: callback => callback(),
     startVirtualJob() { throw new Error('Unexpected virtual job'); }
   });

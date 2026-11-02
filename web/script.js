@@ -284,7 +284,7 @@ async function connect(event) {
 }
 
 /**
- * Yêu cầu ESP32 xóa cấu hình WiFi cũ và khởi động lại vào AP cứu hộ "KimPang"
+ * Yêu cầu ESP32 dừng máy và khởi động lại vào AP để đổi WiFi hoặc broker.
  */
 function handleResetWifi() {
   if (!state.client?.connected) {
@@ -292,17 +292,17 @@ function handleResetWifi() {
     return;
   }
   const confirmed = confirm(
-    'BẠN CÓ CHẮC CHẮN MUỐN CẤU HÌNH LẠI WIFI CHO ESP32?\n\n' +
-    '1. ESP32 sẽ xóa thông tin WiFi cũ và khởi động lại.\n' +
+    'BẠN CÓ CHẮC CHẮN MUỐN ĐỔI WIFI / BROKER CỦA ESP32?\n\n' +
+    '1. ESP32 sẽ dừng máy, nâng bút và khởi động lại vào chế độ cấu hình.\n' +
     '2. Máy sẽ tự phát mạng WiFi cứu hộ "KimPang" (Mật khẩu: 88888888).\n' +
-    '3. Bạn chỉ cần kết nối vào WiFi "KimPang" và mở trình duyệt http://192.168.4.1 để nhập mạng WiFi mới.\n\n' +
+    '3. Kết nối vào WiFi "KimPang", mở http://192.168.4.1 rồi nhập WiFi và broker muốn dùng. Nhập lại mật khẩu WiFi nếu mạng có mật khẩu.\n\n' +
     'Bấm OK để tiến hành chuyển sang AP Mode.'
   );
   if (!confirmed) return;
 
   if (!publish('control/wifi/reset', '1')) return alert('Chưa gửi được yêu cầu đổi Wi-Fi. Kiểm tra ESP32 và quyền điều khiển.');
   log('⚠️ Đã gửi lệnh yêu cầu ESP32 chuyển sang chế độ phát WiFi cứu hộ KimPang...', '01·ĐIỀU KHIỂN');
-  alert('Đã gửi lệnh thành công!\n\nESP32 đang khởi động lại vào chế độ phát WiFi:\n• Tên WiFi (SSID): KimPang\n• Mật khẩu: 88888888\n• Trang cài đặt: http://192.168.4.1');
+  alert('Đã gửi yêu cầu đổi WiFi / broker.\n\nChờ mạng WiFi cấu hình xuất hiện rồi kết nối:\n• Tên WiFi (SSID): KimPang\n• Mật khẩu: 88888888\n• Trang cài đặt: http://192.168.4.1\n\nLưu xong, trở về WiFi của broker để tiếp tục điều khiển.');
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════════
@@ -343,7 +343,7 @@ function renderStatus(data) {
   if ($('motorXNote')) $('motorXNote').textContent = `${Math.round(x)} mm · Giới hạn: ${displayLimitX}`;
   if ($('motorYNote')) $('motorYNote').textContent = `${Math.round(y)} mm · Giới hạn: ${displayLimitY}`;
 
-  // Cập nhật đồng hồ Gauge vị trí X, Y (ECharts) với thang đo an toàn
+  // Cập nhật đồng hồ Gauge vị trí X, Y với thang đo an toàn
   const gaugeMaxX = (xMax > 20 && xMax <= 1000) ? xMax : 230;
   const gaugeMaxY = (yMax > 20 && yMax <= 2000) ? yMax : 850;
   if (typeof updateMotorXGauge === 'function') updateMotorXGauge(x, 0, gaugeMaxX);
@@ -426,10 +426,13 @@ function renderStatus(data) {
 
     if (typeof updateDhtTrend === 'function') updateDhtTrend(temperature, humidity);
   } else {
+    updateTempGauge(null);
+    updateHumGauge(null);
     if ($('temperatureValue')) $('temperatureValue').textContent = '-- °C';
     if ($('temperatureNote')) $('temperatureNote').textContent = 'DHT11 chưa phản hồi';
     if ($('humidityValue')) $('humidityValue').textContent = '-- %';
     if ($('humidityNote')) $('humidityNote').textContent = 'DHT11 chưa phản hồi';
+    updateDhtTrend(null, null);
   }
 
   const position = `X ${x} · Y ${y}`;
@@ -1017,11 +1020,71 @@ function shapeOps(kind) {
  * Thực thi lệnh vẽ hình học tự động: truyền trọn vẹn toàn bộ bản vẽ sang ESP32 qua MQTT
  * @param {string} kind - Loại hình cần vẽ ('square' hoặc 'circle')
  */
+async function uploadJob(kind, ops, section) {
+  const generation = ++state.uploadGeneration;
+  state.isUploadingJob = true;
+  if (state.transport) state.transport.uploading = true;
+  const active = () => state.isUploadingJob && state.uploadGeneration === generation;
+  const waitForStatus = async (previous, accepts) => {
+    const deadline = Date.now() + 20000;
+    while (active() && isEspConnected()) {
+      if (state.status !== previous && accepts(state.status?.job)) return;
+      if (Date.now() >= deadline) throw new Error('ESP32 chưa xác nhận dữ liệu bản vẽ.');
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    throw new Error('Đã hủy gửi hoặc mất kết nối ESP32.');
+  };
+  const send = (action, body) => {
+    if (!active() || !publish(`auto/${kind}/${action}`, body, section)) throw new Error('Không gửi được bản vẽ.');
+  };
+  try {
+    if (!ops.length || ops.length > 8000 || ops.some(op => !/^(U|D|-?\d+,-?\d+)$/.test(op))) {
+      throw new Error('Bản vẽ không hợp lệ hoặc vượt quá 8000 lệnh.');
+    }
+    const up = Number($('penUp')?.value ?? 110);
+    const down = Number($('penDown')?.value ?? 80);
+    let previous = state.status;
+    send('begin', JSON.stringify({ n: ops.length, up, down }));
+    await waitForStatus(previous, job => job?.k === kind && job.s === 'load' && job.n === 0);
+    let received = 0;
+    while (received < ops.length) {
+      // Commands are ASCII. Limit bytes as well as point count to leave RAM for Wi-Fi.
+      const chunk = [];
+      let bytes = 0;
+      while (received + chunk.length < ops.length) {
+        const op = ops[received + chunk.length];
+        const size = op.length + (chunk.length ? 1 : 0);
+        if (bytes + size > 1024) break;
+        chunk.push(op);
+        bytes += size;
+      }
+      if (!chunk.length) throw new Error('Một lệnh vượt kích thước gói tin.');
+      received += chunk.length;
+      previous = state.status;
+      send('data', chunk.join(';'));
+      await waitForStatus(previous, job => job?.k === kind && job.s === 'load' && job.n === received);
+    }
+    previous = state.status;
+    send('start', '');
+    await waitForStatus(previous, job => job?.k === kind && job.n === ops.length && ['run', 'done'].includes(job.s));
+    return true;
+  } catch (error) {
+    if (active()) {
+      log(error.message + ' Không tự gửi lại bản vẽ.', section);
+      if (state.transport?.owned && state.client?.connected) state.transport.stop();
+    }
+    return false;
+  } finally {
+    if (state.uploadGeneration === generation) {
+      state.isUploadingJob = false;
+      if (state.transport) state.transport.uploading = false;
+    }
+  }
+}
+
 async function runShape(kind) {
   if (!canStartJob()) return;
   const ops = shapeOps(kind);
-  const up = Number($('penUp')?.value) || 110;
-  const down = Number($('penDown')?.value) || 80;
   const geometry = getCircleGeometry();
   const range = state.status?.range || { x: [0, 230], y: [0, 850] };
   const spanX = Math.abs((range.x?.[1] ?? 230) - (range.x?.[0] ?? 0));
@@ -1031,22 +1094,10 @@ async function runShape(kind) {
     ? `Khung limit 2 trục (${spanX}x${spanY}mm) ⬚`
     : `Hình tròn 80% trục ngắn (${circleDiameter}x${circleDiameter}mm) ○`;
 
-  const uploadGeneration = ++state.uploadGeneration;
-  state.isUploadingJob = true;
-  if (state.transport) state.transport.uploading = true;
-
   // Nếu Web đã kết nối Broker: luôn nạp toàn bộ bản vẽ sang ESP32 thực tế
   if (state.client?.connected) {
-    if (!publish(`auto/${kind}/begin`, JSON.stringify({ n: ops.length, up, down }), '02·VẼ HÌNH')) { invalidateUpload(); return; }
-    await new Promise(resolve => setTimeout(resolve, 60));
-    if (!state.isUploadingJob || uploadGeneration !== state.uploadGeneration) return;
-    if (!publish(`auto/${kind}/data`, ops.join(';'), '02·VẼ HÌNH')) { invalidateUpload(); return; }
-    await new Promise(resolve => setTimeout(resolve, 80));
-    if (!state.isUploadingJob || uploadGeneration !== state.uploadGeneration) return;
-    if (!publish(`auto/${kind}/start`, '', '02·VẼ HÌNH')) { invalidateUpload(); return; }
-    state.isUploadingJob = false;
-    if (state.transport) state.transport.uploading = false;
-    log(`✅ Đã nạp toàn bộ bản vẽ ${kindLabel} sang ESP32. ESP32 bắt đầu tự động vẽ từ bộ nhớ!`, '02·VẼ HÌNH');
+    if (!await uploadJob(kind, ops, '02·VẼ HÌNH')) return;
+    log(`ESP32 đã xác nhận đủ bản vẽ ${kindLabel} và bắt đầu thực hiện.`, '02·VẼ HÌNH');
 
     // Cập nhật giao diện tiến độ thực tế cho ESP32
     if ($('jobPercent')) $('jobPercent').textContent = '0';
@@ -1217,6 +1268,7 @@ function updateBwCanvas() {
 function scheduleProcess(delay = 100) {
   if (imgWs.processTimer) clearTimeout(imgWs.processTimer);
   imgWs.processTimer = setTimeout(() => {
+    imgWs.processTimer = null;
     processImageAndGeneratePaths();
   }, delay);
 }
@@ -1226,6 +1278,8 @@ function scheduleProcess(delay = 100) {
  * Hoạt động trong không gian chuẩn 500x500 đơn vị ảo
  */
 function processImageAndGeneratePaths() {
+  if (imgWs.processTimer) clearTimeout(imgWs.processTimer);
+  imgWs.processTimer = null;
   if (!imgWs.img) return;
 
   const { mW, mH } = getMachineLimits();
@@ -1297,17 +1351,21 @@ function processImageAndGeneratePaths() {
     paths = optimizePathOrder(paths);
   } else {
     // ════ CHẾ ĐỘ 2: TÔ MÀU (Nét ngang liền kề với bước cách tùy chọn) ════
-    const spacingPx = Math.max(3, Math.round(imgWs.hatchSpacing * (V_SIZE / mW)));
+    // Nét nằm ngang nên khoảng cách theo chiều Y. Giữ tọa độ lẻ trong
+    // khung ảo để bước 1 mm không bị làm tròn thành 1 pixel (= 1,7 mm ở khổ 850).
+    const spacingPx = imgWs.hatchSpacing * (V_SIZE / mH);
+    const rowCount = Math.ceil(mH / imgWs.hatchSpacing);
     const thresh = imgWs.threshold;
 
-    let rowIdx = 0;
-    for (let y = 0; y < offH; y += spacingPx) {
+    for (let rowIdx = 0; rowIdx < rowCount; rowIdx++) {
+      const y = rowIdx * spacingPx;
+      const sampleY = Math.min(offH - 1, Math.floor(y));
       const segments = [];
       let inSegment = false;
       let startX = 0;
 
       for (let x = 0; x < offW; x++) {
-        const isDark = gray[y * offW + x] < thresh;
+        const isDark = gray[sampleY * offW + x] < thresh;
         if (isDark && !inSegment) {
           inSegment = true;
           startX = x;
@@ -1333,7 +1391,6 @@ function processImageAndGeneratePaths() {
           paths.push([{ x: seg.x1, y: seg.y }, { x: seg.x2, y: seg.y }]);
         });
       }
-      rowIdx++;
     }
   }
 
@@ -1342,7 +1399,7 @@ function processImageAndGeneratePaths() {
     .filter(p => p.length >= 2)
     .map(p => p.map(pt => ({
       x: Math.min(V_SIZE, Math.max(0, Math.round(pt.x))),
-      y: Math.min(V_SIZE, Math.max(0, Math.round(pt.y)))
+      y: Math.min(V_SIZE, Math.max(0, imgWs.mode === 'hatch' ? pt.y : Math.round(pt.y)))
     })));
 
   // Thêm viền khung hình chữ nhật bao quanh chính bức ảnh nếu người dùng bật
@@ -1796,6 +1853,8 @@ function handleImageFile(file) {
  */
 async function sendImageToESP() {
   if (!canStartJob()) return;
+  // Nếu vừa kéo bước tô rồi bấm Gửi, dùng đường mới thay vì chờ debounce.
+  if (imgWs.processTimer) processImageAndGeneratePaths();
   const ops = state.imagePaths;
   if (!ops || ops.length < 3) return log('Chưa có đường vẽ. Hãy chọn ảnh trước.', '03·VẼ ẢNH');
 
@@ -1804,40 +1863,14 @@ async function sendImageToESP() {
     return;
   }
 
-  const up = Number($('penUp')?.value) || 110;
-  const down = Number($('penDown')?.value) || 80;
   const modeLabel = imgWs.mode === 'outline'
     ? (imgWs.outlineStyle === 'canny' ? 'viền Canny' : 'viền khối')
     : `tô màu (${imgWs.hatchSpacing}mm)`;
 
-  const uploadGeneration = ++state.uploadGeneration;
-  state.isUploadingJob = true;
-  if (state.transport) state.transport.uploading = true;
-
   if (state.client?.connected) {
     log(`Đang nạp toàn bộ bản vẽ (${ops.length} lệnh) sang ESP32...`, '03·VẼ ẢNH');
-    if (!publish('auto/image/begin', JSON.stringify({ n: ops.length, up, down }), '03·VẼ ẢNH')) { invalidateUpload(); return; }
-    await new Promise(resolve => setTimeout(resolve, 80));
-
-    // Chia 200 lệnh mỗi gói để phù hợp bộ đệm MQTT của firmware.
-    const CHUNK_SIZE = 200;
-    for (let i = 0; i < ops.length; i += CHUNK_SIZE) {
-      if (!state.isUploadingJob || uploadGeneration !== state.uploadGeneration) {
-        log('🛑 Đã hủy quá trình gửi lệnh do bấm Dừng máy.', '03·VẼ ẢNH');
-        return;
-      }
-      const chunk = ops.slice(i, i + CHUNK_SIZE).join(';');
-      if (!publish('auto/image/data', chunk, '03·VẼ ẢNH')) { invalidateUpload(); return; }
-      if (i + CHUNK_SIZE < ops.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
-    await new Promise(resolve => setTimeout(resolve, 120));
-    if (!state.isUploadingJob || uploadGeneration !== state.uploadGeneration) return;
-    if (!publish('auto/image/start', '', '03·VẼ ẢNH')) { invalidateUpload(); return; }
-    state.isUploadingJob = false;
-    if (state.transport) state.transport.uploading = false;
-    log(`✅ Đã nạp xong toàn bộ ${ops.length} lệnh sang ESP32. ESP32 bắt đầu tự động vẽ từ bộ nhớ!`, '03·VẼ ẢNH');
+    if (!await uploadJob('image', ops, '03·VẼ ẢNH')) return;
+    log(`ESP32 đã xác nhận đủ ${ops.length} lệnh vẽ từ ảnh và bắt đầu thực hiện.`, '03·VẼ ẢNH');
 
     // Cập nhật giao diện tiến độ thực tế cho ESP32
     if ($('imageJobPercent')) $('imageJobPercent').textContent = '0';
@@ -2233,21 +2266,20 @@ function centerWorkspace() {
 // PHẦN 10: ĐỒ THỊ TRỰC QUAN HÓA THỜI GIAN THỰC (ECHARTS & HTML5 CANVAS CHARTS)
 // ═════════════════════════════════════════════════════════════════════════════════════════
 
-let motorXGaugeChart = null;
-let motorYGaugeChart = null;
-let tempGaugeChart = null;
-let humGaugeChart = null;
+let motorXGauge = null;
+let motorYGauge = null;
+let temperatureGauge = null;
+let humidityGauge = null;
 let dhtTrendChart = null;
 
 const TREND_POINTS_COUNT = 24;
-const FIXED_TIME_SLOTS = Array.from({ length: TREND_POINTS_COUNT }, (_, i) => {
-  const diff = TREND_POINTS_COUNT - 1 - i;
-  return diff === 0 ? 'Hiện tại' : `-${diff * 2}s`;
-});
+// Samples arrive at variable intervals; label their order, not assumed elapsed seconds.
+const DHT_SAMPLE_SLOTS = Array.from({ length: TREND_POINTS_COUNT }, (_, i) =>
+  i === TREND_POINTS_COUNT - 1 ? 'Mới nhất' : `−${TREND_POINTS_COUNT - 1 - i}`);
 
 // Khởi tạo trước mảng dữ liệu lịch sử để biểu đồ ổn định ngay khi load trang
 state.positionHistory = Array.from({ length: 60 }, () => ({ xPercent: 0, yPercent: 0 }));
-state.dhtHistory = Array.from({ length: TREND_POINTS_COUNT }, () => ({ temp: 28, hum: 65 }));
+state.dhtHistory = Array.from({ length: TREND_POINTS_COUNT }, () => ({ temp: null, hum: null }));
 
 /**
  * Vẽ biểu đồ vị trí động cơ X & Y thời gian thực trên HTML5 Canvas
@@ -2308,277 +2340,75 @@ function drawPositionChart() {
   drawLine('yPercent', '#ffa94d');
 }
 
-/**
- * Tạo cấu hình đồng hồ Gauge dạng cung tròn bán nguyệt cho ECharts
- * @param {object} cfg - Thông số cấu hình gauge
- * @returns {object}
- */
-function createGaugeOption(cfg) {
-  const { min, max, unit, splitNumber, color, colorThin, value } = cfg;
-  return {
-    series: [
-      {
-        type: 'gauge',
-        center: ['50%', '64%'],
-        startAngle: 200,
-        endAngle: -20,
-        min: min,
-        max: max,
-        splitNumber: splitNumber || 5,
-        itemStyle: {
-          color: color || '#FFAB91'
-        },
-        progress: {
-          show: true,
-          width: 18
-        },
-        pointer: {
-          show: false
-        },
-        axisLine: {
-          lineStyle: {
-            width: 18,
-            color: [[1, 'rgba(0,0,0,0.06)']]
-          }
-        },
-        axisTick: {
-          distance: -26,
-          splitNumber: 4,
-          lineStyle: {
-            width: 1.5,
-            color: '#aaa'
-          }
-        },
-        splitLine: {
-          distance: -30,
-          length: 8,
-          lineStyle: {
-            width: 2,
-            color: '#888'
-          }
-        },
-        axisLabel: {
-          distance: -14,
-          color: '#666',
-          fontSize: 10,
-          fontFamily: "'Inter', system-ui, sans-serif"
-        },
-        anchor: {
-          show: false
-        },
-        title: {
-          show: false
-        },
-        detail: {
-          valueAnimation: true,
-          width: '60%',
-          lineHeight: 28,
-          borderRadius: 8,
-          offsetCenter: [0, '-10%'],
-          fontSize: 24,
-          fontWeight: '900',
-          fontFamily: "'Space Grotesk', 'Inter', sans-serif",
-          formatter: `{value} ${unit}`,
-          color: 'inherit'
-        },
-        data: [
-          {
-            value: value ?? 0
-          }
-        ]
-      },
-      {
-        type: 'gauge',
-        center: ['50%', '64%'],
-        startAngle: 200,
-        endAngle: -20,
-        min: min,
-        max: max,
-        itemStyle: {
-          color: colorThin || color || '#FD7347'
-        },
-        progress: {
-          show: true,
-          width: 5
-        },
-        pointer: {
-          show: false
-        },
-        axisLine: {
-          show: false
-        },
-        axisTick: {
-          show: false
-        },
-        splitLine: {
-          show: false
-        },
-        axisLabel: {
-          show: false
-        },
-        detail: {
-          show: false
-        },
-        data: [
-          {
-            value: value ?? 0
-          }
-        ]
-      }
-    ]
-  };
-}
-
-/**
- * Khởi tạo toàn bộ các đồ thị trực quan hóa ECharts và Canvas
- */
+/** Khởi tạo bốn gauge SVG và biểu đồ xu hướng. */
 function initAllVisuals() {
+  motorXGauge ||= MiniCncGauges.create($('motorXGaugeContainer'), 'x');
+  motorYGauge ||= MiniCncGauges.create($('motorYGaugeContainer'), 'y');
+  temperatureGauge ||= MiniCncGauges.create($('tempGaugeContainer'), 'temperature');
+  humidityGauge ||= MiniCncGauges.create($('humGaugeContainer'), 'humidity');
   if (typeof echarts === 'undefined') return;
-
-  // 1. Đồng hồ Gauge Motor X (0..230mm)
-  const mxDom = $('motorXGaugeContainer');
-  if (mxDom && !motorXGaugeChart) {
-    motorXGaugeChart = echarts.init(mxDom, null, { renderer: 'canvas', useDirtyRect: false });
-    motorXGaugeChart.setOption(createGaugeOption({
-      min: 0,
-      max: 230,
-      unit: 'mm',
-      splitNumber: 5,
-      color: '#6c5ce7',
-      colorThin: '#a29bfe',
-      value: 0
-    }));
-  }
-
-  // 2. Đồng hồ Gauge Motor Y (0..850mm)
-  const myDom = $('motorYGaugeContainer');
-  if (myDom && !motorYGaugeChart) {
-    motorYGaugeChart = echarts.init(myDom, null, { renderer: 'canvas', useDirtyRect: false });
-    motorYGaugeChart.setOption(createGaugeOption({
-      min: 0,
-      max: 850,
-      unit: 'mm',
-      splitNumber: 5,
-      color: '#0984e3',
-      colorThin: '#74b9ff',
-      value: 0
-    }));
-  }
-
-  // 3. Đồng hồ Gauge Nhiệt độ DHT11 (0..60°C)
-  const tempDom = $('tempGaugeContainer');
-  if (tempDom && !tempGaugeChart) {
-    tempGaugeChart = echarts.init(tempDom, null, { renderer: 'canvas', useDirtyRect: false });
-    tempGaugeChart.setOption(createGaugeOption({
-      min: 0,
-      max: 60,
-      unit: '°C',
-      splitNumber: 6,
-      color: '#ff7675',
-      colorThin: '#FD7347',
-      value: 28.5
-    }));
-  }
-
-  // 4. Đồng hồ Gauge Độ ẩm DHT11 (0..100%)
-  const humDom = $('humGaugeContainer');
-  if (humDom && !humGaugeChart) {
-    humGaugeChart = echarts.init(humDom, null, { renderer: 'canvas', useDirtyRect: false });
-    humGaugeChart.setOption(createGaugeOption({
-      min: 0,
-      max: 100,
-      unit: '%',
-      splitNumber: 5,
-      color: '#74b9ff',
-      colorThin: '#0984e3',
-      value: 65.0
-    }));
-  }
 
   // 5. Biểu đồ đường xu hướng DHT11 cố định (Nhiệt độ & Độ ẩm)
   const dhtDom = $('dhtChartContainer');
   if (dhtDom && !dhtTrendChart) {
     dhtTrendChart = echarts.init(dhtDom, null, { renderer: 'canvas', useDirtyRect: false });
+    const traceColors = ['#efaa76', '#76cbd5'];
     dhtTrendChart.setOption({
       animation: false,
+      textStyle: { fontFamily: 'Consolas, monospace' },
       tooltip: {
         trigger: 'axis',
-        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-        textStyle: { color: '#2d3436', fontSize: 12 },
-        borderColor: 'rgba(0,0,0,0.08)'
+        confine: true,
+        backgroundColor: '#f5f8fa',
+        textStyle: { color: '#203b47', fontSize: 12 },
+        borderColor: '#b8cdd5',
+        formatter: params => params.map(p => {
+          const value = p.value == null || p.value === '-' ? 'Chưa có dữ liệu'
+            : `${Number(p.value).toLocaleString('vi-VN', { minimumFractionDigits: 1 })} ${p.seriesIndex === 0 ? '°C' : '%'}`;
+          return `${p.marker} ${p.seriesName}: ${value}`;
+        }).join('<br>')
       },
-      grid: {
-        top: 28,
-        right: 48,
-        bottom: 24,
-        left: 48,
-        containLabel: false
-      },
-      xAxis: {
-        type: 'category',
-        boundaryGap: false,
-        data: FIXED_TIME_SLOTS,
-        axisLine: { lineStyle: { color: 'rgba(0,0,0,0.1)' } },
-        axisTick: { show: false },
-        axisLabel: { color: '#888', fontSize: 10 }
-      },
-      yAxis: [
-        {
-          type: 'value',
-          name: '°C',
-          nameTextStyle: { color: '#ff7675', fontSize: 11, fontWeight: 'bold' },
-          min: 0,
-          max: 60,
-          splitNumber: 6,
-          axisLabel: { color: '#ff7675', fontSize: 10 },
-          splitLine: { lineStyle: { color: 'rgba(0,0,0,0.04)' } }
-        },
-        {
-          type: 'value',
-          name: '%',
-          nameTextStyle: { color: '#74b9ff', fontSize: 11, fontWeight: 'bold' },
-          min: 0,
-          max: 100,
-          splitNumber: 5,
-          axisLabel: { color: '#74b9ff', fontSize: 10 },
-          splitLine: { show: false }
-        }
+      axisPointer: { link: [{ xAxisIndex: 'all' }], lineStyle: { color: '#8aa5b0', type: 'dashed' } },
+      grid: [
+        { top: 22, right: 25, bottom: '58%', left: 34 },
+        { top: '60%', right: 25, bottom: 25, left: 34 }
       ],
-      series: [
-        {
-          name: 'Nhiệt độ',
-          type: 'line',
-          yAxisIndex: 0,
-          showSymbol: false,
-          smooth: 0.3,
-          lineStyle: { color: '#ff7675', width: 2.5 },
-          itemStyle: { color: '#ff7675' },
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(255, 118, 117, 0.25)' },
-              { offset: 1, color: 'rgba(255, 118, 117, 0.00)' }
-            ])
-          },
-          data: state.dhtHistory.map(p => p.temp)
+      xAxis: [0, 1].map(index => ({
+        type: 'category', gridIndex: index, boundaryGap: false,
+        data: DHT_SAMPLE_SLOTS,
+        axisLine: { show: false }, axisTick: { show: false },
+        axisLabel: { show: index === 1, color: '#aec4cd', fontSize: 10, interval: 5, showMaxLabel: true, hideOverlap: true }
+      })),
+      yAxis: [
+        { name: 'NHIỆT ĐỘ · °C', max: 60, interval: 30 },
+        { name: 'ĐỘ ẨM · %', max: 100, interval: 50 }
+      ].map((axis, index) => ({
+        ...axis, type: 'value', gridIndex: index, min: 0, nameGap: 10,
+        nameLocation: 'end', nameTextStyle: { color: traceColors[index], fontSize: 10, align: 'left', padding: [0, 0, 0, 4] },
+        axisLabel: { color: '#aec4cd', fontSize: 10 },
+        splitLine: { lineStyle: { color: '#334b56', type: 'dashed' } }
+      })),
+      series: ['Nhiệt độ', 'Độ ẩm'].map((name, index) => ({
+        name, type: 'line', xAxisIndex: index, yAxisIndex: index,
+        showSymbol: true, symbol: 'circle', symbolSize: 4,
+        smooth: false, connectNulls: false,
+        lineStyle: { color: traceColors[index], width: 2 },
+        itemStyle: { color: traceColors[index] },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: index === 0 ? 'rgba(239,170,118,.22)' : 'rgba(118,203,213,.22)' },
+            { offset: 1, color: index === 0 ? 'rgba(239,170,118,0)' : 'rgba(118,203,213,0)' }
+          ])
         },
-        {
-          name: 'Độ ẩm',
-          type: 'line',
-          yAxisIndex: 1,
-          showSymbol: false,
-          smooth: 0.3,
-          lineStyle: { color: '#74b9ff', width: 2.5 },
-          itemStyle: { color: '#74b9ff' },
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(116, 185, 255, 0.25)' },
-              { offset: 1, color: 'rgba(116, 185, 255, 0.00)' }
-            ])
-          },
-          data: state.dhtHistory.map(p => p.hum)
-        }
-      ]
+        data: state.dhtHistory.map(p => index === 0 ? p.temp : p.hum)
+      }))
     });
+    // Mobile navigation can reveal or resize this panel after the window resize event.
+    const chartObserver = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) dhtTrendChart.resize({ width, height });
+    });
+    chartObserver.observe(dhtDom);
   }
 
   // Khởi vẽ biểu đồ vị trí Canvas và khung bàn máy
@@ -2588,10 +2418,6 @@ function initAllVisuals() {
 
   // Tự động co giãn khi cửa sổ trình duyệt thay đổi kích thước
   window.addEventListener('resize', () => {
-    motorXGaugeChart?.resize();
-    motorYGaugeChart?.resize();
-    tempGaugeChart?.resize();
-    humGaugeChart?.resize();
     dhtTrendChart?.resize();
     drawPositionChart();
     renderWorkspace();
@@ -2599,78 +2425,38 @@ function initAllVisuals() {
   });
 }
 
-/**
- * Cập nhật giá trị hiển thị trên đồng hồ Gauge Motor X
- */
+// Giữ các điểm cập nhật chung cho trạng thái MQTT và mô phỏng trên web.
 function updateMotorXGauge(val, min = 0, max = 230) {
-  if (!motorXGaugeChart) return;
-  const num = Number(val);
-  if (!Number.isFinite(num)) return;
-  const rounded = Math.round(num);
-  const targetMax = Math.min(1000, Math.max(50, Math.round(max)));
-  motorXGaugeChart.setOption({
-    series: [
-      { min: 0, max: targetMax, data: [{ value: rounded }] },
-      { min: 0, max: targetMax, data: [{ value: rounded }] }
-    ]
-  });
+  motorXGauge?.update(val, min, max);
 }
 
-/**
- * Cập nhật giá trị hiển thị trên đồng hồ Gauge Motor Y
- */
 function updateMotorYGauge(val, min = 0, max = 850) {
-  if (!motorYGaugeChart) return;
-  const num = Number(val);
-  if (!Number.isFinite(num)) return;
-  const rounded = Math.round(num);
-  const targetMax = Math.min(2000, Math.max(50, Math.round(max)));
-  motorYGaugeChart.setOption({
-    series: [
-      { min: 0, max: targetMax, data: [{ value: rounded }] },
-      { min: 0, max: targetMax, data: [{ value: rounded }] }
-    ]
-  });
+  motorYGauge?.update(val, min, max);
 }
 
-/**
- * Cập nhật giá trị hiển thị trên đồng hồ Gauge Nhiệt độ
- */
 function updateTempGauge(val) {
-  if (!tempGaugeChart) return;
-  const num = Number(val);
-  if (!Number.isFinite(num)) return;
-  const rounded = Number(num.toFixed(1));
-  tempGaugeChart.setOption({
-    series: [
-      { data: [{ value: rounded }] },
-      { data: [{ value: rounded }] }
-    ]
-  });
+  temperatureGauge?.update(val);
 }
 
-/**
- * Cập nhật giá trị hiển thị trên đồng hồ Gauge Độ ẩm
- */
 function updateHumGauge(val) {
-  if (!humGaugeChart) return;
-  const num = Number(val);
-  if (!Number.isFinite(num)) return;
-  const rounded = Number(num.toFixed(1));
-  humGaugeChart.setOption({
-    series: [
-      { data: [{ value: rounded }] },
-      { data: [{ value: rounded }] }
-    ]
-  });
+  humidityGauge?.update(val);
 }
 
 /**
  * Thêm điểm dữ liệu mới vào biểu đồ xu hướng DHT11
  */
 function updateDhtTrend(temp, hum) {
-  const t = Number(Number(temp || 0).toFixed(1));
-  const h = Number(Number(hum || 0).toFixed(1));
+  const measurement = value => (typeof value === 'number' || (typeof value === 'string' && value.trim())) && Number.isFinite(Number(value))
+    ? Number(Number(value).toFixed(1)) : null;
+  const t = measurement(temp);
+  const h = measurement(hum);
+  const display = value => value === null ? '--' : value.toLocaleString('vi-VN', { minimumFractionDigits: 1 });
+  if ($('dhtChartTempValue')) $('dhtChartTempValue').textContent = `${display(t)} °C`;
+  if ($('dhtChartHumValue')) $('dhtChartHumValue').textContent = `${display(h)} %`;
+  if ($('dhtTrendStatus')) $('dhtTrendStatus').textContent = t === null || h === null
+    ? 'DHT11 chưa phản hồi · Khoảng trống là mẫu thiếu dữ liệu'
+    : 'DHT11 · Thứ tự mẫu từ cũ đến mới';
+  $('dhtChartContainer')?.setAttribute('aria-label', `Lịch sử 24 mẫu DHT11. Nhiệt độ mới nhất: ${t === null ? 'chưa có dữ liệu' : `${display(t)} °C`}. Độ ẩm mới nhất: ${h === null ? 'chưa có dữ liệu' : `${display(h)} %`}.`);
   state.dhtHistory.push({ temp: t, hum: h });
   if (state.dhtHistory.length > TREND_POINTS_COUNT) {
     state.dhtHistory.shift();
@@ -2844,7 +2630,7 @@ modeTabs.forEach(tab => {
     imgWs.mode = tab.dataset.mode;
     const hatchCtrl = $('hatchSpacingCtrl');
     if (hatchCtrl) {
-      hatchCtrl.style.display = imgWs.mode === 'hatch' ? 'flex' : 'none';
+      hatchCtrl.hidden = imgWs.mode !== 'hatch';
     }
     const outlineRow = $('outlineStyleRow');
     if (outlineRow) {
@@ -2928,7 +2714,9 @@ if ($('minLenSlider')) {
 
 if ($('hatchSpacing')) {
   $('hatchSpacing').addEventListener('input', e => {
-    imgWs.hatchSpacing = Number(e.target.value) || 3;
+    imgWs.hatchSpacing = Math.max(1, Math.min(20, Math.round(Number(e.target.value) || 3)));
+    e.target.value = imgWs.hatchSpacing;
+    e.target.setAttribute('aria-valuetext', `${imgWs.hatchSpacing} mm`);
     if ($('hatchSpacingOut')) $('hatchSpacingOut').textContent = `${imgWs.hatchSpacing} mm`;
     scheduleProcess(80);
   });

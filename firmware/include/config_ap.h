@@ -16,7 +16,7 @@
 
 // Mật khẩu WiFi AP (Tối thiểu 8 ký tự theo chuẩn WPA2)
 #ifndef WIFI_AP_PASSWORD
-#define WIFI_AP_PASSWORD "88888888"
+#define WIFI_AP_PASSWORD "12345678"
 #endif
 
 // Cấu hình địa chỉ IP cho chế độ AP

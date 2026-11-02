@@ -31,7 +31,7 @@ button, input, select, .button { touch-action: manipulation; }
 .mobile-layout .control-grid, .mobile-layout .charts-dual-grid, .mobile-layout .image-draw-grid { grid-template-columns: minmax(0, 1fr); }
 .mobile-layout .jog-content { display: flex; flex-wrap: wrap; gap: 16px; }
 .mobile-layout .jog-dpad-col, .mobile-layout .jog-actions-col { flex: 1 1 260px; min-width: 0; }
-.mobile-layout .gauges-quad-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mobile-layout .gauges-quad-grid { grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); }
 .mobile-layout .auth-form { display: grid; grid-template-columns: 1fr; }
 .mobile-layout button, .mobile-layout .button, .mobile-layout input:not([type=checkbox]):not([type=hidden]), .mobile-layout select { min-height: 48px; min-width: 48px; }
 .mobile-layout input, .mobile-layout select { font-size: 16px; }

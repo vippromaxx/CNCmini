@@ -34,6 +34,8 @@
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
+#include <new>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
@@ -118,12 +120,24 @@ float dhtHumidity = 0.0f;       // Độ ẩm môi trường (%)
 uint32_t lastDhtRead = 0;       // Chu kỳ đọc cảm biến DHT11 (tối thiểu 2.5s)
 
 // 6. Hàng đợi lệnh vẽ (Job Queue)
-JobOp job[JOB_MAX_OPS];         // Mảng chứa các điểm lệnh CNC
+JobOp *job = nullptr;          // Chỉ giữ vùng lệnh khi chạy điều khiển; AP cần RAM cho WiFi/DHCP.
 uint16_t jobCount = 0;          // Tổng số lệnh trong bản vẽ
 uint16_t jobIndex = 0;          // Vị trí lệnh đang thực thi
 String jobKind = "image";       // Phân loại bản vẽ ('square', 'circle', 'image')
 String jobState = "idle";       // Trạng thái bản vẽ: 'idle', 'load', 'run', 'stop', 'done'
 bool stopRequested = false;     // Cờ ngắt khẩn cấp khi người dùng bấm HỦY LỆNH VẼ
+
+bool prepareJobBuffer() {
+  if (job) return true;
+  job = new (std::nothrow) JobOp[JOB_MAX_OPS];
+  return job != nullptr;
+}
+
+void releaseJobBuffer() {
+  delete[] job;
+  job = nullptr;
+  jobCount = jobIndex = 0;
+}
 
 // ═════════════════════════════════════════════════════════════════════════════════════════
 // PHẦN 3: TIỆN ÍCH NGOẠI VI CƠ BẢN: LED BÁO HIỆU & MÀN HÌNH LCD (HARDWARE UTILITIES)
@@ -226,17 +240,8 @@ void loadConfig() {
   cfg.mqttUser = prefs.getString("mqttUser", MQTT_USER);
   cfg.mqttPassword = prefs.getString("mqttPassword", MQTT_PASSWORD);
 
-  // Nếu trong config.h đã điền WiFi cụ thể, ưu tiên cập nhật cấu hình mới vào NVS
-  if (strlen(WIFI_SSID) > 0 && cfg.ssid != WIFI_SSID) {
-    cfg.ssid = WIFI_SSID;
-    cfg.password = WIFI_PASSWORD;
-    cfg.mqttHost = MQTT_HOST;
-    cfg.mqttPort = MQTT_PORT;
-    cfg.mqttUser = MQTT_USER;
-    cfg.mqttPassword = MQTT_PASSWORD;
-    saveConfig();
-    Serial.println("[CONFIG] Da dong bo WiFi tu config.h vao NVS");
-  }
+  // Giá trị trong config.h chỉ là mặc định khi khóa tương ứng chưa có trong NVS.
+  // Không ghi đè WiFi/broker đã lưu từ trang cấu hình sau mỗi lần khởi động.
   const uint8_t calibrationVersion = prefs.getUChar("calVersion", 0);
   // Giữ limit V2 để không thay đổi chuyển động cũ, nhưng không coi đó là số đo mm.
   calibrated = prefs.getBool("calibrated", true);
@@ -272,6 +277,8 @@ void saveConfig() {
   prefs.putUShort("mqttPort", cfg.mqttPort);
   prefs.putString("mqttUser", cfg.mqttUser);
   prefs.putString("mqttPassword", cfg.mqttPassword);
+  // Chỉ rời chế độ cấu hình sau khi người dùng đã lưu đầy đủ thông tin mới.
+  prefs.putBool("forceConfig", false);
 }
 
 /**
@@ -320,12 +327,49 @@ void sendConfigStatus() {
  * Khởi động chế độ phát WiFi cứu hộ Access Point "KimPang" và Captive Portal Web Server
  */
 void startConfigMode() {
+  if (mqtt.connected()) mqtt.disconnect();
+  netClient.stop();
+  releaseJobBuffer();
   configMode = true;
-  WiFi.mode(WIFI_AP);
+  static bool apEventsRegistered = false;
+  if (!apEventsRegistered) {
+    WiFi.onEvent([](arduino_event_id_t event, arduino_event_info_t info) {
+      if (event == ARDUINO_EVENT_WIFI_AP_STACONNECTED) {
+        Serial.printf("[AP] Client associated, aid=%u\n", info.wifi_ap_staconnected.aid);
+      } else if (event == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED) {
+        Serial.printf("[AP] Client disconnected, aid=%u reason=%u\n",
+                      info.wifi_ap_stadisconnected.aid, info.wifi_ap_stadisconnected.reason);
+      } else if (event == ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED) {
+        Serial.println("[AP] Client received an IP address");
+      }
+    });
+    apEventsRegistered = true;
+  }
+  if (!WiFi.mode(WIFI_AP)) {
+    Serial.println("[AP] ERROR: cannot enable AP mode");
+    lcdPrintLines("AP START FAILED", "CHECK USB LOG");
+    return;
+  }
   const IPAddress apIP = WIFI_AP_IP;
   const IPAddress netMsk = WIFI_AP_SUBNET;
-  WiFi.softAPConfig(apIP, apIP, netMsk);
-  WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD, WIFI_AP_CHANNEL, WIFI_AP_HIDDEN, WIFI_AP_MAX_CONN);
+  if (!WiFi.softAPConfig(apIP, apIP, netMsk) ||
+      !WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD, WIFI_AP_CHANNEL, WIFI_AP_HIDDEN, WIFI_AP_MAX_CONN)) {
+    Serial.println("[AP] ERROR: AP IP or security configuration failed");
+    lcdPrintLines("AP CONFIG FAILED", "CHECK USB LOG");
+    return;
+  }
+  wifi_config_t apConfig = {};
+  wifi_bandwidths_t apBandwidths = {};
+  esp_wifi_get_bandwidths(WIFI_IF_AP, &apBandwidths);
+  const esp_err_t apResult = esp_wifi_get_config(WIFI_IF_AP, &apConfig);
+  if (apResult == ESP_OK) {
+    Serial.printf("[AP] SSID=%.*s channel=%u auth=%u cipher=%u bandwidth2g=%u free_heap=%u\n",
+                  apConfig.ap.ssid_len, reinterpret_cast<const char *>(apConfig.ap.ssid),
+                  apConfig.ap.channel, apConfig.ap.authmode, apConfig.ap.pairwise_cipher,
+                  apBandwidths.ghz_2g, ESP.getFreeHeap());
+  } else {
+    Serial.printf("[AP] ERROR: cannot inspect AP configuration: %s\n", esp_err_to_name(apResult));
+  }
   dnsServer.start(53, "*", apIP);
 
   configServer.on("/", HTTP_GET, [] { configServer.send_P(200, "text/html; charset=utf-8", CONFIG_PAGE); });
@@ -373,7 +417,7 @@ void startConfigMode() {
  * @returns true nếu kết nối thành công, false nếu không kết nối được
  */
 bool connectWiFi() {
-  if (cfg.ssid.isEmpty()) {
+  if (prefs.getBool("forceConfig", false) || cfg.ssid.isEmpty()) {
     lcdPrintLines("AP CONFIG MODE", WIFI_AP_IP_STR);
     return false;
   }
@@ -868,10 +912,15 @@ void handleMqttMessage(char *topic, byte *payload, unsigned int length) {
 
   // 1. Lệnh cấu hình lại WiFi sang AP Mode cứu hộ
   if (rest == "control/wifi/reset") {
-    Serial.println("[WIFI] Received WiFi reset request. Clearing WiFi and switching to AP mode...");
+    stopRequested = true;
+    jobState = "stop";
+    setPen(false, penUpAngle);
+    enableMotors(false);
+    Serial.println("[WIFI] Switching to AP configuration mode...");
     lcdPrintLines("RESETTING WIFI..", "STARTING AP MODE");
-    prefs.remove("ssid");
-    prefs.remove("password");
+    // Giữ thông tin cũ để điền sẵn biểu mẫu, nhưng buộc boot vào AP cho tới khi lưu.
+    prefs.putBool("forceConfig", true);
+    publishStatus();
     triggerActLed(1000);
     restartPending = true;
     restartAt = millis() + 600;
@@ -1028,12 +1077,21 @@ void handleMqttMessage(char *topic, byte *payload, unsigned int length) {
 /**
  * Kết nối đến MQTT Broker, đăng ký (subscribe) các topic nhận lệnh điều khiển máy CNC
  */
-void connectMqtt() {
-  if (WiFi.status() != WL_CONNECTED || cfg.mqttHost.isEmpty()) return;
+bool connectMqtt() {
+  if (WiFi.status() != WL_CONNECTED || cfg.mqttHost.isEmpty() || cfg.mqttPort == 0) return false;
+  if (mqtt.connected()) return true;
+  netClient.setConnectionTimeout(2000);
+  mqtt.setSocketTimeout(3);
   mqtt.setServer(cfg.mqttHost.c_str(), cfg.mqttPort);
-  mqtt.setBufferSize(4096); // 4KB buffer luôn cấp phát an toàn trên heap ESP32
+  if (!mqtt.setBufferSize(4096)) {
+    Serial.println("[MQTT] Cannot allocate packet buffer");
+    return false;
+  }
   String clientId = String(DEVICE_ID) + "-" + String((uint32_t)ESP.getEfuseMac(), HEX);
-  if (!mqtt.connect(clientId.c_str(), cfg.mqttUser.c_str(), cfg.mqttPassword.c_str(), mqttTopic("status").c_str(), 1, true, "{\"state\":\"offline\"}")) return;
+  if (!mqtt.connect(clientId.c_str(), cfg.mqttUser.c_str(), cfg.mqttPassword.c_str(), mqttTopic("status").c_str(), 1, true, "{\"state\":\"offline\"}")) {
+    Serial.printf("[MQTT] Connection failed, state=%d\n", mqtt.state());
+    return false;
+  }
 
   const char *commands[] = {
     "control/jog/x/left", "control/jog/x/right", "control/jog/y/up", "control/jog/y/down",
@@ -1045,9 +1103,42 @@ void connectMqtt() {
     "auto/image/begin", "auto/image/data", "auto/image/start"
   };
   for (const char *command : commands) {
-    mqtt.subscribe(mqttTopic(command).c_str(), 1);
+    if (!mqtt.subscribe(mqttTopic(command).c_str(), 1)) {
+      mqtt.disconnect();
+      Serial.println("[MQTT] Could not subscribe to control topics");
+      return false;
+    }
   }
   publishStatus();
+  return mqtt.connected();
+}
+
+// Chỉ mở chế độ điều khiển khi cả WiFi và MQTT đã nối được lúc khởi động.
+// Mất mạng sau khi máy đã chạy vẫn dùng nhánh reconnect trong loop().
+bool connectControlNetwork() {
+  if (!connectWiFi()) return false;
+  if (cfg.mqttHost.isEmpty() || cfg.mqttPort == 0) {
+    Serial.println("[NETWORK] Missing broker address or port; opening configuration AP");
+    return false;
+  }
+  lcdPrintLines("CONNECTING MQTT", "WAIT UP TO 30S");
+  const uint32_t started = millis();
+  const uint32_t timeoutMs = 30000;
+  while (static_cast<uint32_t>(millis() - started) < timeoutMs) {
+    if (WiFi.status() != WL_CONNECTED) break;
+    if (connectMqtt() && WiFi.status() == WL_CONNECTED && mqtt.connected()) {
+      Serial.println("[NETWORK] WiFi and MQTT ready");
+      lcdPrintLines("WIFI+MQTT READY", WiFi.localIP().toString().c_str());
+      return true;
+    }
+    if (mqtt.state() == MQTT_CONNECT_BAD_CREDENTIALS || mqtt.state() == MQTT_CONNECT_UNAUTHORIZED) break;
+    const uint32_t elapsed = millis() - started;
+    if (elapsed >= timeoutMs) break;
+    const uint32_t remaining = timeoutMs - elapsed;
+    delay(remaining < 1500U ? remaining : 1500U);
+  }
+  Serial.println("[NETWORK] MQTT unavailable; opening configuration AP");
+  return false;
 }
 
 } // namespace
@@ -1062,6 +1153,7 @@ void connectMqtt() {
 void setup() {
   Serial.begin(115200);
   delay(150);
+  const bool jobBufferReady = prepareJobBuffer();
 
   // 1. Nạp cấu hình từ Flash NVS (WiFi, MQTT, Limit và GÓC SERVO ĐÃ LƯU)
   loadConfig();
@@ -1106,15 +1198,13 @@ void setup() {
   // 5. Khởi động cảm biến DHT11
   dht.begin();
 
-  // 6. Kết nối WiFi (hoặc vào chế độ phát WiFi cứu hộ)
-  if (!connectWiFi()) {
+  // 6. Phải kết nối được cả WiFi và MQTT; nếu thất bại thì mở AP để sửa cấu hình.
+  mqtt.setCallback(handleMqttMessage);
+  if (!jobBufferReady || !connectControlNetwork()) {
+    if (!jobBufferReady) Serial.println("[JOB] Insufficient memory for job buffer; entering configuration mode");
     startConfigMode();
     return;
   }
-
-  // 7. Cấu hình MQTT Callback và kết nối Broker
-  mqtt.setCallback(handleMqttMessage);
-  connectMqtt();
 
   Serial.printf("=== MiniCNC ESP32-C5 ===\nMQTT %s:%u\n", cfg.mqttHost.c_str(), cfg.mqttPort);
 }
@@ -1124,8 +1214,10 @@ void setup() {
  */
 void loop() {
   // 1. Xử lý khởi động lại nếu có cờ restart
-  if (restartPending && (int32_t)(millis() - restartAt) >= 0) {
-    ESP.restart();
+  if (restartPending) {
+    if ((int32_t)(millis() - restartAt) >= 0) ESP.restart();
+    // Đã dừng máy: không chạy bản vẽ hoặc nhận thêm lệnh trong lúc chờ reboot.
+    return;
   }
 
   // 2. Nếu đang ở chế độ AP Captive Portal cứu hộ

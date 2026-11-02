@@ -925,112 +925,101 @@ pre { white-space: pre-wrap; word-break: break-word; }
   background: linear-gradient(135deg, #fafaf5 0%, #f3f2ec 100%);
 }
 .telemetry-panel .panel-title { margin-bottom: 14px; }
+/* Four instruments share dimensions, but each has its own face and visual language. */
 .gauges-quad-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   margin-bottom: 20px;
 }
-@media (max-width: 1200px) {
-  .gauges-quad-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-@media (max-width: 640px) {
-  .gauges-quad-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 .gauge-card {
-  background: #ffffff;
-  border: 2px solid rgba(0, 0, 0, 0.08);
-  border-radius: var(--radius-md);
-  padding: 16px 16px 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+  --gauge-ink: #392c69;
+  --gauge-muted: #6c6084;
+  --gauge-accent: #6b4cca;
+  min-width: 0;
+  padding: 18px 14px 14px;
+  border: 1px solid #ded8ed;
+  border-radius: 20px;
+  background: #fdfcff;
+  box-shadow: 0 4px 14px rgba(26, 26, 46, .04);
+  color: var(--gauge-ink);
   display: flex;
   flex-direction: column;
-  transition: all 0.25s ease;
-  position: relative;
   overflow: hidden;
 }
-
-.gauge-card:hover {
-  border-color: rgba(108, 92, 231, 0.25);
-  box-shadow: 0 8px 24px rgba(108, 92, 231, 0.08);
+.gauge-header { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.gauge-header > div { min-width: 0; }
+.gauge-label { display: block; font: 800 11px/1.45 var(--font-body); letter-spacing: .7px; color: var(--gauge-ink); }
+.gauge-note { display: block; margin-top: 5px; font: 500 11px/1.45 var(--font-body); color: var(--gauge-muted); overflow-wrap: anywhere; }
+.gauge-header > span {
+  display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0;
+  border: 1px solid #ded4f7; border-radius: 11px; background: #efe9fc;
+  color: var(--gauge-accent); font: 800 17px/1 var(--font-heading);
 }
-
-.gauge-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 2px;
+.gauge-canvas { width: 100%; height: 242px; margin: 12px auto 6px; display: grid; place-items: center; }
+.gauge-canvas > svg { display: block; width: 100%; max-width: 280px; height: 242px; overflow: visible; }
+.gauge-canvas text { fill: var(--gauge-ink); text-anchor: middle; font-family: var(--font-body); }
+.gauge-canvas .gauge-value { font: 700 38px/1 var(--font-heading); letter-spacing: -1.5px; font-variant-numeric: tabular-nums; }
+.gauge-canvas .gauge-unit { fill: var(--gauge-muted); font-size: 12px; font-weight: 600; letter-spacing: .6px; }
+.gauge-canvas .gauge-scale { fill: var(--gauge-muted); font-size: 11px; font-weight: 600; }
+.gauge-canvas .gauge-overline { fill: var(--gauge-muted); font-size: 10px; font-weight: 600; letter-spacing: 1px; }
+.gauge-footer {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  gap: 6px 10px; padding-top: 12px; margin-top: auto; border-top: 1px solid #e9e3f2;
+  color: var(--gauge-muted); font-size: 10px; font-weight: 600; letter-spacing: .4px;
 }
-
-.gauge-label {
-  display: block;
-  font: 800 11px/1 var(--font-body);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--ink);
+.gauge-footer [data-gauge-range] { font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.gauge-outside-range [data-gauge-range] { font-weight: 800; text-decoration: underline; }
+/* X — a mechanical dial with a physical needle and engraved ticks. */
+.gauge-dial-rim { fill: #eee9f6; stroke: #d6cce8; stroke-width: 1; }
+.gauge-dial-face { fill: #fff; stroke: #fff; stroke-width: 2; }
+.gauge-rail { fill: none; stroke: #e6dff2; stroke-width: 2; }
+.gauge-tick { fill: none; stroke: #ab9bbd; stroke-width: 1; }
+.gauge-tick-major { stroke: #6b5683; stroke-width: 2; }
+.gauge-needle { fill: #6b4cca; }
+.gauge-hub { fill: #392c69; stroke: #fff; stroke-width: 2; }
+.gauge-hub-core { fill: #d7cbef; }
+.gauge-card-x .gauge-value { font-size: 32px; }
+/* Y — a dark digital instrument with individual progress segments. */
+.gauge-card-y {
+  --gauge-ink: #f0fcfa; --gauge-muted: #a0bcb8; --gauge-accent: #6ee7ce;
+  background: #142c2a; border-color: #284440;
+  background-image: radial-gradient(ellipse at 50% 40%, #1c3a36, transparent 75%);
 }
-
-.gauge-note {
-  display: block;
-  margin-top: 4px;
-  font: 600 11px/1 var(--font-body);
-  color: #777;
-}
-
-.gauge-canvas {
-  width: 100%;
-  height: 210px;
-}
-
-.motor-icon {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  font: 900 16px/1 var(--font-heading);
-  flex-shrink: 0;
-  color: #fff;
-}
-
-.motor-x-icon {
-  background: linear-gradient(135deg, var(--purple) 0%, #a29bfe 100%);
-  box-shadow: 0 4px 12px rgba(108, 92, 231, 0.35);
-}
-
-.motor-y-icon {
-  background: linear-gradient(135deg, #0984e3 0%, #74b9ff 100%);
-  box-shadow: 0 4px 12px rgba(9, 132, 227, 0.35);
-}
-
-.temperature-icon {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--orange) 0%, #ffb84d 100%);
-  font: 800 18px/1 var(--font-body);
-  box-shadow: 0 4px 12px rgba(255,169,77,.3);
-  flex-shrink: 0;
-}
-
-.humidity-icon {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--cyan) 0%, var(--blue-soft) 100%);
-  font: 800 18px/1 var(--font-body);
-  box-shadow: 0 4px 12px rgba(116,185,255,.3);
-  flex-shrink: 0;
-}
+.gauge-card-y .gauge-header > span { background: #24443f; border-color: #3a6058; color: #8cf0d9; border-radius: 7px; }
+.gauge-card-y .gauge-footer { border-color: #34504b; }
+.gauge-card-y .gauge-value { font-family: var(--font-mono); font-size: 36px; letter-spacing: -1px; }
+.gauge-digital-guide { stroke: #3e5f57; stroke-width: 1; fill: none; }
+.gauge-segment { stroke: #36554e; stroke-width: 13; fill: none; }
+.gauge-segment.is-filled { stroke: #6ee7ce; }
+.gauge-digital-inner { stroke: #34574f; stroke-width: 1; fill: none; }
+.gauge-digital-track { fill: #3b5e54; }
+.gauge-digital-fill { fill: #6ee7ce; }
+/* Environmental instruments — precise scales, large readouts, quiet paper surfaces. */
+.gauge-card-temperature, .gauge-card-humidity { border-radius: 16px; box-shadow: none; }
+.gauge-card-temperature { --gauge-ink: #743b26; --gauge-muted: #805e4d; --gauge-accent: #b9552f; background: #fffaf4; border-color: #e9d9c9; }
+.gauge-card-temperature .gauge-header > span { background: #f9e8d9; border-color: #ebcfb8; border-radius: 9px; }
+.gauge-card-temperature .gauge-footer { border-color: #e9d9c9; }
+.gauge-card-temperature .gauge-value { font-size: 36px; }
+.gauge-card-temperature .gauge-canvas .gauge-unit { font-size: 11px; }
+.gauge-thermo-shell { fill: #fffefb; stroke: #d9bfa7; stroke-width: 1.5; }
+.gauge-thermo-track { fill: none; stroke: #f1e4d6; stroke-width: 12; stroke-linecap: round; }
+.gauge-thermo-fill { fill: none; stroke-width: 12; stroke-linecap: round; }
+.gauge-thermo-bulb { fill: #d57940; }
+.gauge-thermo-tick { stroke: #ba9578; stroke-width: 1; }
+.gauge-sensor-divider { stroke: #dfcbb8; stroke-width: 1; }
+.gauge-card-humidity { --gauge-ink: #164c5b; --gauge-muted: #506e77; --gauge-accent: #237b8c; background: #f4fafb; border-color: #ccdee2; }
+.gauge-card-humidity .gauge-header > span { background: #e1eff1; border-color: #c4dee2; border-radius: 9px; }
+.gauge-card-humidity .gauge-footer { border-color: #ccdee2; }
+.gauge-card-humidity .gauge-tick { stroke: #9ab9c0; }
+.gauge-card-humidity .gauge-tick-major { stroke: #668f99; stroke-width: 1.5; }
+.gauge-humidity-track, .gauge-humidity-fill { fill: none; stroke-width: 8; stroke-linecap: round; }
+.gauge-humidity-track { stroke: #dbe9ec; }
+.gauge-humidity-fill { stroke: var(--gauge-accent); }
+.gauge-humidity-marker { fill: #f4fafb; stroke: var(--gauge-accent); stroke-width: 3; }
+.gauge-drop { fill: #d4e9ed; stroke: var(--gauge-accent); stroke-width: 1.5; }
+@media (max-width: 1200px) { .gauges-quad-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .gauges-quad-grid { grid-template-columns: minmax(0, 1fr); } }
 
 /* 2 Trend Charts Grid (Stationary - Fixed frame) */
 .charts-dual-grid {
@@ -1100,9 +1089,20 @@ pre { white-space: pre-wrap; word-break: break-word; }
 }
 .legend-x { background: var(--purple); box-shadow: 0 0 6px rgba(108,92,231,.4); }
 .legend-y { background: var(--orange); box-shadow: 0 0 6px rgba(255,169,77,.4); }
-.legend-temp { background: #ff7675; box-shadow: 0 0 6px rgba(255,118,117,.4); }
-.legend-hum { background: #74b9ff; box-shadow: 0 0 6px rgba(116,185,255,.4); }
+.legend-temp { background: #efaa76; }
+.legend-hum { background: #76cbd5; }
 .chart-legend b { margin-left: 3px; font-weight: 800; }
+
+/* Two aligned environmental traces, each with its own unit and scale. */
+.dht-chart-card { min-width: 0; background: #182c35; color: #eef5f6; border: 1px solid #31464f; border-radius: 16px; padding: 18px; box-shadow: none; }
+.dht-chart-card .chart-heading { align-items: flex-start; flex-wrap: wrap; line-height: 1.5; }
+.dht-chart-card .chart-heading b { font-size: 15px; font-weight: 600; }
+.dht-chart-card .chart-heading span { background: #263e48; color: #c3d4da; border: 1px solid #405660; border-radius: 5px; white-space: nowrap; }
+.dht-chart-card .chart-legend { gap: 12px 24px; margin-top: 14px; padding: 0 0 12px; border-top: 0; border-bottom: 1px solid #354b55; color: #c3d4da; font-size: 11px; line-height: 1.5; }
+.dht-chart-card .chart-legend b { color: #f4f8f9; font-family: var(--font-mono); font-size: 15px; font-weight: 600; }
+.dht-chart-card .chart-legend i { width: 7px; height: 7px; border-radius: 2px; }
+.dht-chart-card .trend-chart-canvas { height: 220px; margin-top: 10px; }
+.dht-chart-status { margin: 8px 0 0; padding-top: 10px; border-top: 1px solid #354b55; color: #aec4cd; font-size: 11px; line-height: 1.5; }
 
 /* ── Drawing section ──────────────────────── */
 .drawing-panel {
@@ -1662,6 +1662,13 @@ pre { white-space: pre-wrap; word-break: break-word; }
   accent-color: var(--purple);
   cursor: pointer;
 }
+.hatch-spacing-control { padding-top: 16px; border-top: 1px solid #e8e2f5; }
+.hatch-spacing-control .ctrl-header-row { gap: 8px 12px; flex-wrap: wrap; }
+.hatch-spacing-control .ctrl-name { line-height: 1.5; }
+.hatch-spacing-control output { white-space: nowrap; }
+.hatch-spacing-control input[type=range] { min-height: 48px; }
+.hatch-spacing-scale { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; font-weight: 600; color: #625d72; }
+#hatchSpacingHelp { margin-top: 4px; font-size: 12px; line-height: 1.6; color: #625d72; }
 
 /* Workspace & Preview Layout */
 .workspace-row {

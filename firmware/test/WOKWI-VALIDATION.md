@@ -1,7 +1,5 @@
 # Kết quả dự án Wokwi riêng — 01/11/2026 (Asia/Saigon)
 
-Báo cáo này ghi nhận các lượt chạy tại dự án PlatformIO CNC gốc trước khi gộp mã vào repo GitHub. Đường dẫn và hash binary bên dưới thuộc lần kiểm chứng đó. Bản gộp thay thông tin mạng riêng bằng giá trị mẫu; kết quả build và kiểm tra bản gộp được ghi tại [../VALIDATION.md](../VALIDATION.md).
-
 ## Đã xác nhận
 
 - Người dùng chọn tách Wokwi thành dự án riêng, giữ nguyên firmware CNC.
@@ -50,3 +48,12 @@ Báo cáo này ghi nhận các lượt chạy tại dự án PlatformIO CNC gố
 - Bằng chứng cục bộ: `test/.runtime/actuators-before.vcd`, `actuators-after.vcd`, `actuator-signals-result.json`, `actuator-web-result.json`, `stability-result.json`. Đã chạy lại simulator sau khi xuất tín hiệu; trạng thái cuối LED tắt, bút nâng.
 
 Lệnh và thao tác chạy: [WOKWI.md](WOKWI.md).
+
+## Khôi phục cấu hình chạy ngày 01/11/2026 (buổi tối)
+
+- Đã tái hiện lỗi mở simulator: `test/wokwi.toml` cần environment `wokwi`, nhưng chỉ còn artifact của `wokwi-test`. Tab TOML chưa lưu trong IDE còn trỏ sai tới `.pio/build/esp32c5`, gây thêm xung đột `The content of the file is newer`.
+- Đã build lại environment `wokwi`, kiểm tra `.bin` và `.elf` tồn tại từ cả hai file TOML, nạp lại nội dung đúng trong IDE và chạy `CNC/test/wokwi.toml`. Log simulator đã xác nhận `WiFi and MQTT ready`, MQTT `host.wokwi.internal:1883`.
+- Thêm `test/build-wokwi.ps1` để build đúng environment, giữ output khi đổi environment và kiểm tra artifact; không tự ghi TOML hay upload mạch thật.
+- **Lỗi reset chưa được giải quyết hoàn toàn:** đã tái hiện `block_locate_free tlsf/tlsf.c:569` cả lúc khởi động/kết nối và khi gửi ảnh 526 lệnh. Bản mô phỏng giới hạn hàng đợi 8000 lệnh (đúng giới hạn web), tiết kiệm 48 KB nhưng vẫn ghi nhận reset; không kết luận nguyên nhân chỉ là thiếu RAM. GDB sau đó ghi nhận heap DRAM lớn còn khoảng 60040 byte. Thử đối chiếu SDK cũ chưa hoàn tất và không được áp dụng vào cấu hình thường.
+- Web đã có kiểm thử chờ phản hồi đủ số lệnh, chia gói không quá 1024 byte, hủy gửi và không tự phát lại sau mất kết nối. Chưa nghiệm thu đầy đủ hình tròn/hình ảnh trên bản C5 hiện tại.
+- Log cục bộ: `test/.runtime/restore-wokwi-build.log`, `restored-wokwi-boot.log`, `drawing-current-serial.log`; bản TOML chưa lưu trước khi khôi phục được giữ ở `wokwi-unsaved-before-restore.toml` cùng thư mục. Không sửa hoặc nạp firmware mạch thật trong lượt này.

@@ -31,7 +31,7 @@ input:focus-visible,button:focus-visible{outline:3px solid #547d26;outline-offse
 <p class="hint">Dùng tài khoản ESP32 trong broker/users.json. Mật khẩu không hiển thị lại sau khi tải trang.</p></fieldset>
 <label class="check"><input id="showPassword" type="checkbox">Hiện hai mật khẩu</label>
 <button id="save" type="submit" disabled>Lưu cấu hình và khởi động lại</button><p id="message" role="status" aria-live="polite"></p>
-</form><footer>Khi chưa có cấu hình hoặc WiFi đã lưu không kết nối được, ESP32 mở WiFi <strong>KimPang</strong>, mật khẩu <strong>88888888</strong>. Kết nối mạng này rồi mở <strong>http://192.168.4.1</strong>. Sau khi máy khởi động lại, laptop cần trở về WiFi chung để dùng bảng điều khiển CNC. Có thể gõ <code>config</code> trong Serial Monitor lúc máy rảnh để vào lại chế độ cấu hình.</footer>
+</form><footer>Khi chưa có cấu hình hoặc WiFi đã lưu không kết nối được, ESP32 mở WiFi <strong>KimPang</strong>, mật khẩu <strong>12345678</strong>. Kết nối mạng này rồi mở <strong>http://192.168.4.1</strong>. Sau khi máy khởi động lại, laptop cần trở về WiFi chung để dùng bảng điều khiển CNC. Có thể gõ <code>config</code> trong Serial Monitor lúc máy rảnh để vào lại chế độ cấu hình.</footer>
 </main><script>
 const el = id => document.getElementById(id);
 let initialized = false, online = false, machineBusy = true, saving = false, restarting = false;

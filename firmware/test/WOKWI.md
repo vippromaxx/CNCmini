@@ -6,25 +6,29 @@ Luồng: **web → broker WEBCNC trên máy → CNC mô phỏng trong Wokwi**, v
 
 ## Firmware CNC giữ nguyên
 
-`firmware/src/main.cpp` và `firmware/platformio.ini` giữ nguyên logic và cấu hình build máy thật. Không thêm profile mô phỏng hoặc logic riêng vào các file này. Khi gộp lên GitHub, các mặc định mạng riêng trong `include/config.h` được thay bằng giá trị mẫu; xem [README firmware](../README.md) để cấu hình máy thật.
+`CNC/src/main.cpp`, `CNC/include/config.h` và `CNC/platformio.ini` không thay đổi so với bản trước tác vụ Wokwi. Không thêm profile mô phỏng hoặc logic riêng vào các file này.
 
-Dự án mô phỏng nằm ở **firmware/test/wokwi/**, có `platformio.ini`, `src/main.cpp`, `include/`, `diagram.json` và `wokwi.toml` riêng. Nó đọc lại logic CNC từ source gốc, rồi dùng adapter/cấu hình riêng khi biên dịch mô phỏng. Mọi output build nằm dưới `test/wokwi/.pio/`. Model mô phỏng là **ESP32-C5 DevKitC-1** theo yêu cầu người dùng; đây là kiểm tra trên simulator, không phải nghiệm thu máy thật.
+Dự án mô phỏng nằm ở **CNC/test/wokwi/**, có `platformio.ini`, `src/main.cpp`, `include/`, `diagram.json` và `wokwi.toml` riêng. Nó đọc lại logic CNC từ source gốc, rồi dùng adapter/cấu hình riêng khi biên dịch mô phỏng. Mọi output build nằm dưới `test/wokwi/.pio/`. Model mô phỏng là **ESP32-C5 DevKitC-1** theo yêu cầu người dùng; đây là kiểm tra trên simulator, không phải nghiệm thu máy thật.
 
 ## Build mô phỏng
 
-Từ thư mục `firmware/`:
+Từ thư mục CNC:
 
 ```powershell
-pio run --project-dir test/wokwi
+./test/build-wokwi.ps1
 ```
 
 Nếu `pio` không có trong PATH:
 
 ```powershell
-& "$env:USERPROFILE/.platformio/penv/Scripts/platformio.exe" run --project-dir test/wokwi
+& "$env:USERPROFILE/.platformio/penv/Scripts/platformio.exe" run --project-dir test/wokwi -e wokwi --disable-auto-clean -j 4
 ```
 
-Không upload bản này lên máy thật. Firmware của máy thật vẫn build bằng `pio run -e esp32c5` ở thư mục `firmware/`.
+Không upload bản này lên máy thật. Firmware của máy thật vẫn build bằng `pio run -e esp32c5` ở thư mục CNC.
+
+Nếu báo `firmware binary ... not found`, chạy lại lệnh build trên: cấu hình thường cần output của environment `wokwi`, không dùng output của `wokwi-test`. Cờ `--disable-auto-clean` giữ bản thường khi chuyển environment kiểm thử. Script chỉ build và kiểm tra `.bin`/`.elf`, không ghi đè `wokwi.toml` đang mở trong IDE.
+
+Nếu IDE báo `The content of the file is newer`, dùng **Compare** để đối chiếu bản chưa lưu. Cấu hình `CNC/test/wokwi.toml` đúng trỏ đến `wokwi/.pio/build/wokwi/firmware.factory.bin` và `wokwi/.pio/build/wokwi/firmware.elf`. Khi bản trên ổ đĩa đã đúng, dùng **File: Revert File** để nạp lại tab; không ghi đè nó bằng đường dẫn build mạch thật.
 
 ## Kết nối và chạy
 
@@ -48,12 +52,12 @@ node test/start-broker.cjs "C:/duong-dan/WEBCNC"
 
 Trong IDE:
 
-1. F1 → **Wokwi: Select Config File** → chọn **firmware/test/wokwi/wokwi.toml**.
+1. F1 → **Wokwi: Select Config File** → chọn **CNC/test/wokwi/wokwi.toml**.
 2. F1 → **Wokwi: Start Simulator** và giữ tab mô phỏng hiển thị.
 3. Web → tải lại trang → đăng nhập **user1 / 1**. Không bật chế độ mô phỏng riêng của giao diện web, vì chế độ đó không gửi MQTT.
 4. Chờ thiết bị gửi status trực tiếp. Web sẽ cập nhật cảm biến, tọa độ và cho phép điều khiển.
 
-Cấu hình cũ `firmware/test/wokwi.toml` cũng trỏ tới binary của dự án riêng để tương thích tab đã mở; sơ đồ chính được giữ tại `test/wokwi/diagram.json`.
+Cấu hình cũ `CNC/test/wokwi.toml` cũng trỏ tới binary của dự án riêng để tương thích tab đã mở; sơ đồ chính được giữ tại `test/wokwi/diagram.json`.
 
 Wokwi extension sử dụng Private IoT Gateway để truy cập broker local. Website Wokwi cần Private IoT Gateway; public gateway không tới được broker trên máy. Nếu chạy một máy CNC thật cùng broker, không dùng đồng thời cùng device ID `cnc01` với máy mô phỏng.
 
